@@ -14,5 +14,6 @@ uv run playwright install chromium
 ```powershell
 uv run berlin-insider fetch
 uv run berlin-insider fetch --json
+uv run berlin-insider fetch --fetch-only
 uv run berlin-insider fetch --source eventbrite_berlin_weekend
 ```
