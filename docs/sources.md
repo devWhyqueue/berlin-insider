@@ -1,0 +1,13 @@
+- https://www.berlin.de/wochenend-tipps/
+- https://blog.inberlin.de/
+- https://www.iheartberlin.de/de/
+- https://mitvergnuegen.com/
+- https://www.tip-berlin.de/
+- https://www.tip-berlin.de/tageshighlights/veranstaltungstipps-wochenende/
+- https://www.visitberlin.de/de/blog
+- https://www.berlinfoodstories.com/editorials
+- https://www.berlinfoodstories.com/news
+- https://rausgegangen.de/berlin/tipps-fuers-wochenende/
+- https://www.gratis-in-berlin.de/
+- https://t.me/s/G3Nightdrive
+- https://www.eventbrite.de/d/germany--berlin/events--this-weekend/
