@@ -1,6 +1,7 @@
 from datetime import UTC, datetime
 
 import berlin_insider.cli as cli
+from berlin_insider.curator.models import CuratedItem, CurateRunResult, CurateStatus, SourceCurateResult
 from berlin_insider.fetcher.models import (
     FetchedItem,
     FetchMethod,
@@ -87,6 +88,33 @@ def _parse_result() -> ParseRunResult:
     )
 
 
+def _curate_result() -> CurateRunResult:
+    parsed = _parse_result().results[0].items[0]
+    curated = CuratedItem(item=parsed, score=0.9, selection_notes=["weekend=0.45"])
+    return CurateRunResult(
+        started_at=datetime(2026, 2, 27, 8, 1, tzinfo=UTC),
+        finished_at=datetime(2026, 2, 27, 8, 1, tzinfo=UTC),
+        results=[
+            SourceCurateResult(
+                source_id=SourceId.MITVERGNUEGEN,
+                status=CurateStatus.SUCCESS,
+                selected_items=[curated],
+                dropped_items=[],
+                warnings=[],
+                error_message=None,
+                duration_ms=1,
+            )
+        ],
+        selected_items=[curated],
+        dropped_count=0,
+        failed_sources=[],
+        target_count=7,
+        actual_count=1,
+        category_counts={category: 0 for category in ParsedCategory} | {ParsedCategory.EVENT: 1},
+        warnings=[],
+    )
+
+
 def test_cli_fetch_runs_parser_by_default(monkeypatch, caplog) -> None:
     caplog.set_level("INFO")
 
@@ -101,14 +129,23 @@ def test_cli_fetch_runs_parser_by_default(monkeypatch, caplog) -> None:
             _FakeParser.called = True
             return _parse_result()
 
+    class _FakeCurator:
+        called = False
+
+        def run(self, parse_result, *, reference_now, store, config):  # noqa: ANN001, ANN202
+            _FakeCurator.called = True
+            return _curate_result()
+
     monkeypatch.setattr(cli, "Fetcher", _FakeFetcher)
     monkeypatch.setattr(cli, "Parser", _FakeParser)
+    monkeypatch.setattr(cli, "Curator", _FakeCurator)
     monkeypatch.setattr("sys.argv", ["berlin-insider", "fetch"])
 
     cli.main()
 
     assert _FakeParser.called is True
-    assert "Parsed total items: 1" in caplog.text
+    assert _FakeCurator.called is True
+    assert "Curated total items: 1/7" in caplog.text
 
 
 def test_cli_fetch_only_skips_parser(monkeypatch, caplog) -> None:
@@ -130,3 +167,29 @@ def test_cli_fetch_only_skips_parser(monkeypatch, caplog) -> None:
 
     assert "Parsed total items" not in caplog.text
     assert "Total items: 1" in caplog.text
+
+
+def test_cli_parse_only_skips_curator(monkeypatch, caplog) -> None:
+    caplog.set_level("INFO")
+
+    class _FakeFetcher:
+        def run(self, *, context, source_ids=None):  # noqa: ANN001, ANN202
+            return _fetch_result()
+
+    class _FakeParser:
+        def run(self, fetch_result):  # noqa: ANN001, ANN202
+            return _parse_result()
+
+    class _FailIfCalledCurator:
+        def run(self, parse_result, *, reference_now, store, config):  # noqa: ANN001, ANN202
+            raise AssertionError("curator should not run for --parse-only")
+
+    monkeypatch.setattr(cli, "Fetcher", _FakeFetcher)
+    monkeypatch.setattr(cli, "Parser", _FakeParser)
+    monkeypatch.setattr(cli, "Curator", _FailIfCalledCurator)
+    monkeypatch.setattr("sys.argv", ["berlin-insider", "fetch", "--parse-only"])
+
+    cli.main()
+
+    assert "Parsed total items: 1" in caplog.text
+    assert "Curated total items" not in caplog.text

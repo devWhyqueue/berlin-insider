@@ -3,13 +3,22 @@ from __future__ import annotations
 import argparse
 import json
 import logging
-from collections.abc import Iterable
 from dataclasses import asdict
 from datetime import UTC, datetime
+from pathlib import Path
 
-from berlin_insider.fetcher.models import FetchContext, FetchedItem, FetchRunResult, SourceId
+from berlin_insider.cli_render import (
+    render_summary,
+    render_summary_with_parse,
+    render_summary_with_parse_and_curate,
+)
+from berlin_insider.curator.config import CuratorConfig
+from berlin_insider.curator.models import CurateRunResult
+from berlin_insider.curator.orchestrator import Curator
+from berlin_insider.curator.store import JsonSentItemStore
+from berlin_insider.fetcher.models import FetchContext, FetchRunResult, SourceId
 from berlin_insider.fetcher.orchestrator import Fetcher
-from berlin_insider.parser.models import ParsedItem, ParseRunResult
+from berlin_insider.parser.models import ParseRunResult
 from berlin_insider.parser.orchestrator import Parser
 
 logger = logging.getLogger(__name__)
@@ -34,7 +43,20 @@ def _run_fetch_command(args: argparse.Namespace) -> None:
         _log_fetch_only(fetch_result, json_output=args.json)
         return
     parse_result = Parser().run(fetch_result)
-    _log_fetch_with_parse(fetch_result, parse_result, json_output=args.json)
+    if args.parse_only:
+        _log_fetch_with_parse(fetch_result, parse_result, json_output=args.json)
+        return
+    cur_config = CuratorConfig(target_count=args.target_items)
+    sent_store = JsonSentItemStore(Path(args.sent_store_path))
+    curate_result = Curator().run(
+        parse_result,
+        reference_now=fetch_result.finished_at,
+        store=sent_store,
+        config=cur_config,
+    )
+    _log_fetch_with_parse_and_curate(
+        fetch_result, parse_result, curate_result, json_output=args.json
+    )
 
 
 def _fetch_context(args: argparse.Namespace) -> FetchContext:
@@ -50,7 +72,7 @@ def _log_fetch_only(fetch_result: FetchRunResult, *, json_output: bool) -> None:
     if json_output:
         logger.info(json.dumps(asdict(fetch_result), default=str, ensure_ascii=False, indent=2))
         return
-    logger.info(_render_summary(fetch_result))
+    logger.info(render_summary(fetch_result))
 
 
 def _log_fetch_with_parse(
@@ -60,7 +82,25 @@ def _log_fetch_with_parse(
         payload = {"fetch": asdict(fetch_result), "parse": asdict(parse_result)}
         logger.info(json.dumps(payload, default=str, ensure_ascii=False, indent=2))
         return
-    logger.info(_render_summary_with_parse(fetch_result, parse_result))
+    logger.info(render_summary_with_parse(fetch_result, parse_result))
+
+
+def _log_fetch_with_parse_and_curate(
+    fetch_result: FetchRunResult,
+    parse_result: ParseRunResult,
+    curate_result: CurateRunResult,
+    *,
+    json_output: bool,
+) -> None:
+    if json_output:
+        payload = {
+            "fetch": asdict(fetch_result),
+            "parse": asdict(parse_result),
+            "curate": asdict(curate_result),
+        }
+        logger.info(json.dumps(payload, default=str, ensure_ascii=False, indent=2))
+        return
+    logger.info(render_summary_with_parse_and_curate(fetch_result, parse_result, curate_result))
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -80,6 +120,11 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Skip parser stage and only return raw fetch results",
     )
+    fetch.add_argument(
+        "--parse-only",
+        action="store_true",
+        help="Skip curator stage and only return fetch + parser results",
+    )
     fetch.add_argument("--timeout", type=float, default=20.0, help="HTTP timeout in seconds")
     fetch.add_argument(
         "--max-items-per-source",
@@ -95,71 +140,15 @@ def _build_parser() -> argparse.ArgumentParser:
         ),
         help="HTTP user-agent string used for requests",
     )
+    fetch.add_argument(
+        "--target-items",
+        type=int,
+        default=7,
+        help="Target number of curated items",
+    )
+    fetch.add_argument(
+        "--sent-store-path",
+        default=".data/sent_links.json",
+        help="Path to sent-links JSON store for curation dedupe",
+    )
     return parser
-
-
-def _render_summary(result: FetchRunResult) -> str:
-    lines = [
-        f"Fetch run started: {result.started_at.isoformat()}",
-        f"Fetch run finished: {result.finished_at.isoformat()}",
-        f"Total items: {result.total_items}",
-        "",
-    ]
-    for source_result in _sorted_results(result):
-        lines.append(
-            f"- {source_result.source_id.value}: {source_result.status.value} | "
-            f"items={len(source_result.items)} | duration_ms={source_result.duration_ms}"
-        )
-        if source_result.warnings:
-            lines.append(f"  warnings: {'; '.join(source_result.warnings)}")
-        if source_result.error_message:
-            lines.append(f"  error: {source_result.error_message}")
-        if source_result.items:
-            lines.append(f"  sample: {_item_preview(source_result.items[0])}")
-    return "\n".join(lines)
-
-
-def _sorted_results(result: FetchRunResult) -> Iterable:
-    return sorted(result.results, key=lambda item: item.source_id.value)
-
-
-def _item_preview(item: FetchedItem) -> str:
-    title = item.title or "untitled"
-    date = item.raw_date_text or (item.published_at.isoformat() if item.published_at else "n/a")
-    location = item.location_hint or "unknown location"
-    snippet = (item.snippet or "").strip()
-    snippet_text = snippet[:60] + ("..." if len(snippet) > 60 else "")
-    return (
-        f"{title} | {date} | {location} | method={item.fetch_method} | "
-        f"meta={len(item.metadata)} | {snippet_text}"
-    )
-
-
-def _render_summary_with_parse(fetch: FetchRunResult, parse: ParseRunResult) -> str:
-    lines = [_render_summary(fetch), "", f"Parsed total items: {parse.total_items}", ""]
-    for source_result in sorted(parse.results, key=lambda item: item.source_id.value):
-        lines.append(
-            f"- {source_result.source_id.value}: {source_result.status.value} | "
-            f"items={len(source_result.items)} | duration_ms={source_result.duration_ms}"
-        )
-        if source_result.warnings:
-            lines.append(f"  warnings: {'; '.join(source_result.warnings)}")
-        if source_result.error_message:
-            lines.append(f"  error: {source_result.error_message}")
-        if source_result.items:
-            lines.append(f"  sample: {_parsed_item_preview(source_result.items[0])}")
-    return "\n".join(lines)
-
-
-def _parsed_item_preview(item: ParsedItem) -> str:
-    title = item.title or "untitled"
-    start = item.event_start_at.isoformat() if item.event_start_at else "n/a"
-    end = item.event_end_at.isoformat() if item.event_end_at else "n/a"
-    location = item.location or "unknown location"
-    notes_count = len(item.parse_notes)
-    raw_count = len(item.raw)
-    return (
-        f"{title} | {start} | end={end} | {location} | category={item.category.value} "
-        f"({item.category_confidence:.2f}) | weekend={item.weekend_relevance.value} "
-        f"({item.weekend_confidence:.2f}) | notes={notes_count} | raw={raw_count}"
-    )
