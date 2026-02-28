@@ -14,6 +14,7 @@ from berlin_insider.fetcher.orchestrator import Fetcher
 from berlin_insider.formatter import render_telegram_digest
 from berlin_insider.parser.models import ParseRunResult
 from berlin_insider.parser.orchestrator import Parser
+from berlin_insider.storage.content_store import persist_parse_run, upsert_source_websites
 
 DEFAULT_USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
@@ -51,11 +52,14 @@ def build_fetch_context(
 def run_fetch_parse_pipeline(
     *,
     context: FetchContext,
+    db_path: Path,
     source_ids: list[SourceId] | None = None,
 ) -> tuple[FetchRunResult, ParseRunResult]:
     """Run fetch and parse stages and return both run results."""
+    upsert_source_websites(db_path)
     fetch_result = Fetcher().run(context=context, source_ids=source_ids)
     parse_result = Parser().run(fetch_result)
+    persist_parse_run(db_path, parse_result)
     return fetch_result, parse_result
 
 
@@ -68,7 +72,9 @@ def run_full_pipeline(
     source_ids: list[SourceId] | None = None,
 ) -> FullPipelineRunResult:
     """Run fetch, parse, curate, and digest formatting in one call."""
-    fetch_result, parse_result = run_fetch_parse_pipeline(context=context, source_ids=source_ids)
+    fetch_result, parse_result = run_fetch_parse_pipeline(
+        context=context, db_path=db_path, source_ids=source_ids
+    )
     curate_result = Curator().run(
         parse_result,
         reference_now=fetch_result.finished_at,

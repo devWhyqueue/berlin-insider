@@ -60,3 +60,13 @@ uv run berlin-insider schedule
 
 `feedback` is a one-shot command that polls Telegram callback updates (`getUpdates`) and persists
 thumbs-up/down votes to `.data/berlin_insider.db` for ranking training data.
+
+## Persisted Data
+
+SQLite persistence in `.data/berlin_insider.db` includes:
+
+- operational scheduler/delivery state,
+- sent-link dedupe history,
+- sent message metadata and feedback votes,
+- source website registry (`source_websites`),
+- parsed run snapshots (`parse_runs`, `parsed_items`).

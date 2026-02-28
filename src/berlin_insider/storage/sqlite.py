@@ -57,6 +57,43 @@ CREATE TABLE IF NOT EXISTS feedback_events (
   PRIMARY KEY (message_key, telegram_user_id),
   FOREIGN KEY (message_key) REFERENCES sent_messages (message_key) ON DELETE CASCADE
 );
+
+CREATE TABLE IF NOT EXISTS source_websites (
+  source_id TEXT PRIMARY KEY,
+  source_url TEXT NOT NULL,
+  adapter_kind TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS parse_runs (
+  run_id TEXT PRIMARY KEY,
+  started_at TEXT NOT NULL,
+  finished_at TEXT NOT NULL,
+  total_items INTEGER NOT NULL,
+  failed_sources_json TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS parsed_items (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  run_id TEXT NOT NULL,
+  source_id TEXT NOT NULL,
+  item_url TEXT NOT NULL,
+  title TEXT,
+  description TEXT,
+  event_start_at TEXT,
+  event_end_at TEXT,
+  location TEXT,
+  category TEXT NOT NULL,
+  category_confidence REAL NOT NULL,
+  weekend_relevance TEXT NOT NULL,
+  weekend_confidence REAL NOT NULL,
+  parse_notes_json TEXT NOT NULL,
+  raw_json TEXT NOT NULL,
+  FOREIGN KEY (run_id) REFERENCES parse_runs (run_id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_parsed_items_run_id ON parsed_items (run_id);
+CREATE INDEX IF NOT EXISTS idx_parsed_items_source_id ON parsed_items (source_id);
 """
 
 

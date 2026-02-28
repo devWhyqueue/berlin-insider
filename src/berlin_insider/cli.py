@@ -33,6 +33,7 @@ from berlin_insider.scheduler.cli_log import log_schedule_result
 from berlin_insider.scheduler.models import ScheduleConfig
 from berlin_insider.scheduler.orchestrator import Scheduler
 from berlin_insider.scheduler.store import SqliteSchedulerStateStore
+from berlin_insider.storage.content_store import persist_parse_run, upsert_source_websites
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO, format="%(message)s")
@@ -53,12 +54,15 @@ def main() -> None:
 
 
 def _run_fetch_command(args) -> None:  # noqa: ANN001
+    db_path = Path(args.db_path)
+    upsert_source_websites(db_path)
     source_ids = [SourceId(value) for value in args.source] if args.source else None
     fetch_result = Fetcher().run(context=_fetch_context(args), source_ids=source_ids)
     if args.fetch_only:
         _log_fetch_only(fetch_result, json_output=args.json)
         return
     parse_result = Parser().run(fetch_result)
+    persist_parse_run(db_path, parse_result)
     if args.parse_only:
         _log_fetch_with_parse(fetch_result, parse_result, json_output=args.json)
         return
@@ -66,7 +70,7 @@ def _run_fetch_command(args) -> None:  # noqa: ANN001
     curate_result = Curator().run(
         parse_result,
         reference_now=fetch_result.finished_at,
-        store=SqliteSentItemStore(Path(args.db_path), digest_kind=digest_kind),
+        store=SqliteSentItemStore(db_path, digest_kind=digest_kind),
         config=CuratorConfig(
             target_count=1 if digest_kind == DigestKind.DAILY else args.target_items,
             digest_kind=digest_kind,
