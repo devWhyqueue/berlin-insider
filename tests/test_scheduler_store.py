@@ -1,26 +1,17 @@
-import json
 from pathlib import Path
 
 from berlin_insider.scheduler.models import SchedulerState, SchedulerStatus
-from berlin_insider.scheduler.store import JsonSchedulerStateStore
+from berlin_insider.scheduler.store import SqliteSchedulerStateStore
 
 
-def test_scheduler_store_returns_default_for_missing_file(tmp_path: Path) -> None:
-    store = JsonSchedulerStateStore(tmp_path / "missing.json")
+def test_scheduler_store_returns_default_for_empty_db(tmp_path: Path) -> None:
+    store = SqliteSchedulerStateStore(tmp_path / "berlin_insider.db")
     state = store.load()
     assert state == SchedulerState()
 
 
-def test_scheduler_store_handles_corrupt_json(tmp_path: Path) -> None:
-    path = tmp_path / "scheduler_state.json"
-    path.write_text("{not json", encoding="utf-8")
-    state = JsonSchedulerStateStore(path).load()
-    assert state == SchedulerState()
-
-
-def test_scheduler_store_persists_state_atomically(tmp_path: Path) -> None:
-    path = tmp_path / "scheduler_state.json"
-    store = JsonSchedulerStateStore(path)
+def test_scheduler_store_persists_state(tmp_path: Path) -> None:
+    store = SqliteSchedulerStateStore(tmp_path / "berlin_insider.db")
     state = SchedulerState(
         last_attempt_at="2026-02-27T07:00:00+00:00",
         last_run_date_local="2026-02-27",
@@ -38,11 +29,6 @@ def test_scheduler_store_persists_state_atomically(tmp_path: Path) -> None:
     )
 
     store.save(state)
-
-    assert path.exists()
-    assert (tmp_path / "scheduler_state.json.tmp").exists() is False
-    payload = json.loads(path.read_text(encoding="utf-8"))
-    assert payload["last_status"] == "success"
     reloaded = store.load()
     assert reloaded.last_run_date_local == "2026-02-27"
     assert reloaded.last_status == SchedulerStatus.SUCCESS

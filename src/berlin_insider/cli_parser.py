@@ -62,9 +62,9 @@ def _add_fetch_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) 
     )
     fetch.add_argument("--target-items", type=int, default=7, help="Target number of curated items")
     fetch.add_argument(
-        "--sent-store-path",
-        default=".data/sent_links.json",
-        help="Path to sent-links JSON store for curation dedupe",
+        "--db-path",
+        default=".data/berlin_insider.db",
+        help="Path to SQLite database file",
     )
 
 
@@ -98,19 +98,9 @@ def _add_schedule_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser
         "--daily-minute", type=int, default=0, help="Daily tip scheduled minute in local timezone"
     )
     schedule.add_argument(
-        "--state-path",
-        default=".data/scheduler_state.json",
-        help="Path to scheduler state JSON file",
-    )
-    schedule.add_argument(
-        "--sent-store-path",
-        default=".data/sent_links.json",
-        help="Base path for per-kind sent-links stores used for curation dedupe",
-    )
-    schedule.add_argument(
-        "--sent-message-store-path",
-        default=".data/sent_messages.json",
-        help="Path to sent message metadata JSON store",
+        "--db-path",
+        default=".data/berlin_insider.db",
+        help="Path to SQLite database file",
     )
     schedule.add_argument("--target-items", type=int, default=7, help="Weekend target item count")
     schedule.add_argument(
@@ -124,19 +114,9 @@ def _add_feedback_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser
     )
     feedback.add_argument("--json", action="store_true", help="Print full JSON output")
     feedback.add_argument(
-        "--feedback-store-path",
-        default=".data/feedback_events.json",
-        help="Path to feedback JSON store",
-    )
-    feedback.add_argument(
-        "--updates-state-path",
-        default=".data/telegram_updates_state.json",
-        help="Path to Telegram updates offset state JSON store",
-    )
-    feedback.add_argument(
-        "--sent-message-store-path",
-        default=".data/sent_messages.json",
-        help="Path to sent message metadata JSON store",
+        "--db-path",
+        default=".data/berlin_insider.db",
+        help="Path to SQLite database file",
     )
     feedback.add_argument(
         "--poll-timeout-seconds",

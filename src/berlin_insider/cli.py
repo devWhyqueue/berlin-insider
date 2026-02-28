@@ -15,12 +15,12 @@ from berlin_insider.cli_render import (
 from berlin_insider.curator.config import CuratorConfig
 from berlin_insider.curator.models import CurateRunResult
 from berlin_insider.curator.orchestrator import Curator
-from berlin_insider.curator.store import JsonSentItemStore
+from berlin_insider.curator.store import SqliteSentItemStore
 from berlin_insider.digest import DigestKind
 from berlin_insider.feedback.store import (
-    JsonFeedbackStore,
-    JsonSentMessageStore,
-    JsonTelegramUpdatesStateStore,
+    SqliteFeedbackStore,
+    SqliteSentMessageStore,
+    SqliteTelegramUpdatesStateStore,
 )
 from berlin_insider.feedback.telegram_poller import poll_feedback_once
 from berlin_insider.fetcher.models import FetchContext, FetchRunResult, SourceId
@@ -32,7 +32,7 @@ from berlin_insider.parser.orchestrator import Parser
 from berlin_insider.scheduler.cli_log import log_schedule_result
 from berlin_insider.scheduler.models import ScheduleConfig
 from berlin_insider.scheduler.orchestrator import Scheduler
-from berlin_insider.scheduler.store import JsonSchedulerStateStore
+from berlin_insider.scheduler.store import SqliteSchedulerStateStore
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO, format="%(message)s")
@@ -66,7 +66,7 @@ def _run_fetch_command(args) -> None:  # noqa: ANN001
     curate_result = Curator().run(
         parse_result,
         reference_now=fetch_result.finished_at,
-        store=JsonSentItemStore(Path(args.sent_store_path)),
+        store=SqliteSentItemStore(Path(args.db_path), digest_kind=digest_kind),
         config=CuratorConfig(
             target_count=1 if digest_kind == DigestKind.DAILY else args.target_items,
             digest_kind=digest_kind,
@@ -84,8 +84,9 @@ def _run_fetch_command(args) -> None:  # noqa: ANN001
 
 
 def _run_schedule_command(args) -> int:  # noqa: ANN001
+    db_path = Path(args.db_path)
     result = Scheduler().run_once(
-        state_store=JsonSchedulerStateStore(Path(args.state_path)),
+        state_store=SqliteSchedulerStateStore(db_path),
         config=ScheduleConfig(
             timezone=args.timezone,
             daily_hour=args.daily_hour,
@@ -94,21 +95,22 @@ def _run_schedule_command(args) -> int:  # noqa: ANN001
             weekend_hour=args.weekend_hour,
             weekend_minute=args.weekend_minute,
         ),
-        sent_store_path=Path(args.sent_store_path),
+        db_path=db_path,
         target_items=args.target_items,
         force=args.force,
-        sent_message_store=JsonSentMessageStore(Path(args.sent_message_store_path)),
+        sent_message_store=SqliteSentMessageStore(db_path),
     )
     log_schedule_result(logger, result, json_output=args.json)
     return result.exit_code
 
 
 def _run_feedback_command(args) -> int:  # noqa: ANN001
+    db_path = Path(args.db_path)
     result = poll_feedback_once(
         messenger=TelegramMessenger.from_env(),
-        state_store=JsonTelegramUpdatesStateStore(Path(args.updates_state_path)),
-        feedback_store=JsonFeedbackStore(Path(args.feedback_store_path)),
-        sent_message_store=JsonSentMessageStore(Path(args.sent_message_store_path)),
+        state_store=SqliteTelegramUpdatesStateStore(db_path),
+        feedback_store=SqliteFeedbackStore(db_path),
+        sent_message_store=SqliteSentMessageStore(db_path),
         timeout_seconds=args.poll_timeout_seconds,
     )
     if args.json:

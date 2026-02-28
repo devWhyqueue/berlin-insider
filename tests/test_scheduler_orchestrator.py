@@ -5,7 +5,7 @@ from berlin_insider.digest import DigestKind
 from berlin_insider.messenger.models import DeliveryResult, MessengerError
 import berlin_insider.scheduler.orchestrator as scheduler_module
 from berlin_insider.curator.models import CurateRunResult
-from berlin_insider.feedback.store import JsonSentMessageStore
+from berlin_insider.feedback.store import SqliteSentMessageStore
 from berlin_insider.fetcher.models import FetchRunResult
 from berlin_insider.parser.models import ParseRunResult
 from berlin_insider.pipeline import FullPipelineRunResult
@@ -66,12 +66,12 @@ def _empty_curate() -> CurateRunResult:
     )
 
 
-def test_scheduler_skips_when_not_due() -> None:
+def test_scheduler_skips_when_not_due(tmp_path: Path) -> None:
     store = _MemoryStateStore()
     result = scheduler_module.Scheduler().run_once(
         state_store=store,  # type: ignore[arg-type]
         config=ScheduleConfig(timezone="UTC"),
-        sent_store_path=Path(".data/sent_links.json"),
+        db_path=tmp_path / "berlin_insider.db",
         target_items=7,
         force=False,
         now_utc=datetime(2026, 2, 28, 7, 59, tzinfo=UTC),
@@ -97,12 +97,12 @@ def test_scheduler_executes_due_run_success_daily(monkeypatch, tmp_path: Path) -
     result = scheduler_module.Scheduler().run_once(
         state_store=store,  # type: ignore[arg-type]
         config=ScheduleConfig(timezone="UTC"),
-        sent_store_path=Path(".data/sent_links.json"),
+        db_path=tmp_path / "berlin_insider.db",
         target_items=7,
         force=False,
         now_utc=datetime(2026, 2, 23, 8, 0, tzinfo=UTC),
         messenger=_FakeMessenger(),
-        sent_message_store=JsonSentMessageStore(tmp_path / "sent_messages.json"),
+        sent_message_store=SqliteSentMessageStore(tmp_path / "berlin_insider.db"),
     )
     assert result.executed is True
     assert result.status == SchedulerStatus.SUCCESS
@@ -115,7 +115,7 @@ def test_scheduler_executes_due_run_success_daily(monkeypatch, tmp_path: Path) -
     assert store.state.last_delivery_message_id == "42"
 
 
-def test_scheduler_returns_error_when_pipeline_raises(monkeypatch) -> None:
+def test_scheduler_returns_error_when_pipeline_raises(monkeypatch, tmp_path: Path) -> None:
     def _boom(**kwargs):  # noqa: ANN003, ANN202
         raise RuntimeError("boom")
 
@@ -124,7 +124,7 @@ def test_scheduler_returns_error_when_pipeline_raises(monkeypatch) -> None:
     result = scheduler_module.Scheduler().run_once(
         state_store=store,  # type: ignore[arg-type]
         config=ScheduleConfig(timezone="UTC"),
-        sent_store_path=Path(".data/sent_links.json"),
+        db_path=tmp_path / "berlin_insider.db",
         target_items=7,
         force=True,
         now_utc=datetime(2026, 2, 27, 8, 0, tzinfo=UTC),
@@ -136,7 +136,7 @@ def test_scheduler_returns_error_when_pipeline_raises(monkeypatch) -> None:
     assert store.state.last_error_message == "boom"
 
 
-def test_scheduler_returns_error_when_delivery_fails(monkeypatch) -> None:
+def test_scheduler_returns_error_when_delivery_fails(monkeypatch, tmp_path: Path) -> None:
     class _FailingMessenger:
         def send_digest(self, *, text: str, feedback_metadata=None) -> DeliveryResult:  # noqa: ANN001
             raise MessengerError("forbidden")
@@ -155,7 +155,7 @@ def test_scheduler_returns_error_when_delivery_fails(monkeypatch) -> None:
     result = scheduler_module.Scheduler().run_once(
         state_store=store,  # type: ignore[arg-type]
         config=ScheduleConfig(timezone="UTC"),
-        sent_store_path=Path(".data/sent_links.json"),
+        db_path=tmp_path / "berlin_insider.db",
         target_items=7,
         force=True,
         now_utc=datetime(2026, 2, 27, 8, 0, tzinfo=UTC),

@@ -12,9 +12,9 @@ from berlin_insider.feedback.models import (
     TelegramUpdatesState,
 )
 from berlin_insider.feedback.store import (
-    JsonFeedbackStore,
-    JsonSentMessageStore,
-    JsonTelegramUpdatesStateStore,
+    SqliteFeedbackStore,
+    SqliteSentMessageStore,
+    SqliteTelegramUpdatesStateStore,
 )
 
 
@@ -42,9 +42,9 @@ class _PollCounters:
 def poll_feedback_once(
     *,
     messenger: FeedbackMessenger,
-    state_store: JsonTelegramUpdatesStateStore,
-    feedback_store: JsonFeedbackStore,
-    sent_message_store: JsonSentMessageStore,
+    state_store: SqliteTelegramUpdatesStateStore,
+    feedback_store: SqliteFeedbackStore,
+    sent_message_store: SqliteSentMessageStore,
     timeout_seconds: int = 0,
 ) -> FeedbackPollResult:
     """Poll Telegram callbacks once and persist normalized thumbs feedback."""
@@ -76,8 +76,8 @@ def _apply_update(
     update: dict[str, object],
     counters: _PollCounters,
     messenger: FeedbackMessenger,
-    feedback_store: JsonFeedbackStore,
-    sent_message_store: JsonSentMessageStore,
+    feedback_store: SqliteFeedbackStore,
+    sent_message_store: SqliteSentMessageStore,
 ) -> None:
     _track_update_id(update, counters)
     callback_query = update.get("callback_query")
@@ -102,8 +102,8 @@ def _process_callback(
     *,
     callback_query: dict[str, object],
     messenger: FeedbackMessenger,
-    feedback_store: JsonFeedbackStore,
-    sent_message_store: JsonSentMessageStore,
+    feedback_store: SqliteFeedbackStore,
+    sent_message_store: SqliteSentMessageStore,
     counters: _PollCounters,
 ) -> bool:
     parsed = _parse_feedback_callback(callback_query)

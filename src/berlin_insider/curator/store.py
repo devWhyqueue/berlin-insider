@@ -1,9 +1,11 @@
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from typing import Protocol
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+
+from berlin_insider.digest import DigestKind
+from berlin_insider.storage.sqlite import ensure_schema, now_utc_iso, sqlite_connection
 
 _TRACKING_KEYS = {
     "utm_source",
@@ -37,35 +39,41 @@ class NoOpSentItemStore:
         return
 
 
-class JsonSentItemStore:
-    def __init__(self, path: Path) -> None:
-        self._path = path
-        self._sent = self._load()
+class SqliteSentItemStore:
+    def __init__(self, db_path: Path, *, digest_kind: DigestKind) -> None:
+        self._db_path = db_path
+        self._digest_kind = digest_kind.value
+        ensure_schema(self._db_path)
 
     def is_sent(self, url: str) -> bool:
-        """Return true when the canonical URL already exists in local store."""
-        return canonicalize_url(url) in self._sent
+        """Return true when the canonical URL already exists in local store for this digest kind."""
+        canonical_url = canonicalize_url(url)
+        with sqlite_connection(self._db_path) as conn:
+            row = conn.execute(
+                """
+                SELECT 1
+                FROM sent_links
+                WHERE digest_kind = ? AND canonical_url = ?
+                LIMIT 1
+                """,
+                (self._digest_kind, canonical_url),
+            ).fetchone()
+        return row is not None
 
     def mark_sent(self, urls: list[str]) -> None:
-        """Persist selected canonical URLs atomically to JSON."""
-        for url in urls:
-            self._sent.add(canonicalize_url(url))
-        self._path.parent.mkdir(parents=True, exist_ok=True)
-        payload = sorted(self._sent)
-        temp_path = self._path.with_suffix(f"{self._path.suffix}.tmp")
-        temp_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
-        temp_path.replace(self._path)
-
-    def _load(self) -> set[str]:
-        if not self._path.exists():
-            return set()
-        try:
-            data = json.loads(self._path.read_text(encoding="utf-8"))
-        except json.JSONDecodeError:
-            return set()
-        if not isinstance(data, list):
-            return set()
-        return {canonicalize_url(value) for value in data if isinstance(value, str)}
+        """Persist selected canonical URLs into sent_links table."""
+        rows = [(self._digest_kind, canonicalize_url(url), now_utc_iso()) for url in urls]
+        if not rows:
+            return
+        with sqlite_connection(self._db_path) as conn:
+            conn.executemany(
+                """
+                INSERT OR IGNORE INTO sent_links (digest_kind, canonical_url, first_sent_at)
+                VALUES (?, ?, ?)
+                """,
+                rows,
+            )
+            conn.commit()
 
 
 def canonicalize_url(url: str) -> str:

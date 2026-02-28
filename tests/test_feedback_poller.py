@@ -4,9 +4,9 @@ from pathlib import Path
 
 from berlin_insider.digest import DigestKind
 from berlin_insider.feedback.store import (
-    JsonFeedbackStore,
-    JsonSentMessageStore,
-    JsonTelegramUpdatesStateStore,
+    SqliteFeedbackStore,
+    SqliteSentMessageStore,
+    SqliteTelegramUpdatesStateStore,
 )
 from berlin_insider.feedback.telegram_poller import poll_feedback_once
 from berlin_insider.feedback.models import SentMessageRecord
@@ -25,7 +25,8 @@ class _FakeMessenger:
 
 
 def test_feedback_poller_persists_and_deduplicates_votes(tmp_path: Path) -> None:
-    sent_store = JsonSentMessageStore(tmp_path / "sent_messages.json")
+    db_path = tmp_path / "berlin_insider.db"
+    sent_store = SqliteSentMessageStore(db_path)
     sent_store.upsert(
         SentMessageRecord(
             message_key="daily-2026-02-23-abc",
@@ -57,8 +58,8 @@ def test_feedback_poller_persists_and_deduplicates_votes(tmp_path: Path) -> None
         },
     ]
     messenger = _FakeMessenger(updates)
-    feedback_store = JsonFeedbackStore(tmp_path / "feedback_events.json")
-    state_store = JsonTelegramUpdatesStateStore(tmp_path / "updates_state.json")
+    feedback_store = SqliteFeedbackStore(db_path)
+    state_store = SqliteTelegramUpdatesStateStore(db_path)
     result = poll_feedback_once(
         messenger=messenger,
         state_store=state_store,
@@ -73,15 +74,16 @@ def test_feedback_poller_persists_and_deduplicates_votes(tmp_path: Path) -> None
 
 
 def test_feedback_poller_ignores_non_feedback_callbacks(tmp_path: Path) -> None:
-    sent_store = JsonSentMessageStore(tmp_path / "sent_messages.json")
+    db_path = tmp_path / "berlin_insider.db"
+    sent_store = SqliteSentMessageStore(db_path)
     messenger = _FakeMessenger(
         [
             {"update_id": 1, "message": {"text": "hello"}},
             {"update_id": 2, "callback_query": {"id": "cb-x", "data": "foo:bar"}},
         ]
     )
-    feedback_store = JsonFeedbackStore(tmp_path / "feedback_events.json")
-    state_store = JsonTelegramUpdatesStateStore(tmp_path / "updates_state.json")
+    feedback_store = SqliteFeedbackStore(db_path)
+    state_store = SqliteTelegramUpdatesStateStore(db_path)
     result = poll_feedback_once(
         messenger=messenger,
         state_store=state_store,

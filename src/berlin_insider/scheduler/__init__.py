@@ -5,7 +5,7 @@ from berlin_insider.scheduler.models import (
     ScheduleRunResult,
 )
 from berlin_insider.scheduler.orchestrator import Scheduler, is_due
-from berlin_insider.scheduler.store import JsonSchedulerStateStore
+from berlin_insider.scheduler.store import SqliteSchedulerStateStore
 
 __all__ = [
     "ScheduleConfig",
@@ -13,6 +13,6 @@ __all__ = [
     "SchedulerState",
     "SchedulerStatus",
     "Scheduler",
-    "JsonSchedulerStateStore",
+    "SqliteSchedulerStateStore",
     "is_due",
 ]

@@ -1,19 +1,18 @@
 from __future__ import annotations
 
 from datetime import datetime
-from pathlib import Path
 from uuid import uuid4
 
 from berlin_insider.digest import DigestKind
 from berlin_insider.messenger.models import DeliveryResult, MessengerError
 from berlin_insider.pipeline import FullPipelineRunResult
 from berlin_insider.scheduler.models import SchedulerState, SchedulerStatus, ScheduleRunResult
-from berlin_insider.scheduler.store import JsonSchedulerStateStore
+from berlin_insider.scheduler.store import SqliteSchedulerStateStore
 
 
 def build_skip_result(
     *,
-    state_store: JsonSchedulerStateStore,
+    state_store: SqliteSchedulerStateStore,
     state: SchedulerState,
     force: bool,
     reason: str,
@@ -40,7 +39,7 @@ def build_skip_result(
 
 def build_error_result(
     *,
-    state_store: JsonSchedulerStateStore,
+    state_store: SqliteSchedulerStateStore,
     state: SchedulerState,
     force: bool,
     due: bool,
@@ -69,7 +68,7 @@ def build_error_result(
 
 def build_delivery_error_result(
     *,
-    state_store: JsonSchedulerStateStore,
+    state_store: SqliteSchedulerStateStore,
     state: SchedulerState,
     force: bool,
     due: bool,
@@ -101,7 +100,7 @@ def build_delivery_error_result(
 
 def build_success_result(
     *,
-    state_store: JsonSchedulerStateStore,
+    state_store: SqliteSchedulerStateStore,
     state: SchedulerState,
     force: bool,
     due: bool,
@@ -134,12 +133,6 @@ def build_success_result(
         digest_kind=digest_kind,
         message_key=message_key,
     )
-
-
-def sent_store_path_for_kind(path: Path, *, digest_kind: DigestKind) -> Path:
-    """Return per-kind sent-links path derived from configured base path."""
-    suffix = "_daily" if digest_kind == DigestKind.DAILY else "_weekend"
-    return path.with_name(f"{path.stem}{suffix}{path.suffix}")
 
 
 def build_message_key(*, digest_kind: DigestKind, local_date: str) -> str:

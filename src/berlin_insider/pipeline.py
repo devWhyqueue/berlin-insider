@@ -7,7 +7,7 @@ from pathlib import Path
 from berlin_insider.curator.config import CuratorConfig
 from berlin_insider.curator.models import CurateRunResult
 from berlin_insider.curator.orchestrator import Curator
-from berlin_insider.curator.store import JsonSentItemStore
+from berlin_insider.curator.store import SqliteSentItemStore
 from berlin_insider.digest import DigestKind
 from berlin_insider.fetcher.models import FetchContext, FetchRunResult, SourceId
 from berlin_insider.fetcher.orchestrator import Fetcher
@@ -62,7 +62,7 @@ def run_fetch_parse_pipeline(
 def run_full_pipeline(
     *,
     context: FetchContext,
-    sent_store_path: Path,
+    db_path: Path,
     target_items: int,
     digest_kind: DigestKind = DigestKind.WEEKEND,
     source_ids: list[SourceId] | None = None,
@@ -72,7 +72,7 @@ def run_full_pipeline(
     curate_result = Curator().run(
         parse_result,
         reference_now=fetch_result.finished_at,
-        store=JsonSentItemStore(sent_store_path),
+        store=SqliteSentItemStore(db_path, digest_kind=digest_kind),
         config=CuratorConfig(
             target_count=1 if digest_kind == DigestKind.DAILY else target_items,
             digest_kind=digest_kind,

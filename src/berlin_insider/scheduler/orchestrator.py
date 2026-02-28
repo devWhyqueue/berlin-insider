@@ -5,7 +5,7 @@ from pathlib import Path
 
 from berlin_insider.digest import DigestKind
 from berlin_insider.feedback.models import SentMessageRecord
-from berlin_insider.feedback.store import JsonSentMessageStore
+from berlin_insider.feedback.store import SqliteSentMessageStore
 from berlin_insider.messenger.models import FeedbackMetadata, Messenger, MessengerError
 from berlin_insider.messenger.telegram import TelegramMessenger
 from berlin_insider.pipeline import build_fetch_context, run_full_pipeline
@@ -17,23 +17,22 @@ from berlin_insider.scheduler.result_builders import (
     build_message_key,
     build_skip_result,
     build_success_result,
-    sent_store_path_for_kind,
 )
-from berlin_insider.scheduler.store import JsonSchedulerStateStore
+from berlin_insider.scheduler.store import SqliteSchedulerStateStore
 
 
 class Scheduler:
     def run_once(
         self,
         *,
-        state_store: JsonSchedulerStateStore,
+        state_store: SqliteSchedulerStateStore,
         config: ScheduleConfig,
-        sent_store_path: Path,
+        db_path: Path,
         target_items: int,
         force: bool,
         now_utc: datetime | None = None,
         messenger: Messenger | None = None,
-        sent_message_store: JsonSentMessageStore | None = None,
+        sent_message_store: SqliteSentMessageStore | None = None,
     ) -> ScheduleRunResult:
         """Run one scheduler cycle with due-check, state write, and pipeline execution."""
         reference_now = now_utc or datetime.now(UTC)
@@ -41,7 +40,7 @@ class Scheduler:
         return _run_once_cycle(
             state_store=state_store,
             config=config,
-            sent_store_path=sent_store_path,
+            db_path=db_path,
             target_items=target_items,
             force=force,
             reference_now=reference_now,
@@ -53,15 +52,15 @@ class Scheduler:
 
 def _run_once_cycle(
     *,
-    state_store: JsonSchedulerStateStore,
+    state_store: SqliteSchedulerStateStore,
     config: ScheduleConfig,
-    sent_store_path: Path,
+    db_path: Path,
     target_items: int,
     force: bool,
     reference_now: datetime,
     state: SchedulerState,
     messenger: Messenger | None,
-    sent_message_store: JsonSentMessageStore | None,
+    sent_message_store: SqliteSentMessageStore | None,
 ) -> ScheduleRunResult:
     due_state = _resolve_due_state(
         now_utc=reference_now, config=config, state_store=state_store, state=state, force=force
@@ -85,7 +84,7 @@ def _run_once_cycle(
         due=due_state.due,
         force=force,
         reference_now=reference_now,
-        sent_store_path=sent_store_path,
+        db_path=db_path,
         target_items=target_items,
         messenger=messenger,
         sent_message_store=sent_message_store,
@@ -111,7 +110,7 @@ def _resolve_due_state(
     *,
     now_utc: datetime,
     config: ScheduleConfig,
-    state_store: JsonSchedulerStateStore,
+    state_store: SqliteSchedulerStateStore,
     state: SchedulerState,
     force: bool,
 ) -> _DueState:
@@ -145,7 +144,7 @@ def _resolve_due_state(
 
 
 def _load_and_mark_attempt(
-    *, state_store: JsonSchedulerStateStore, reference_now: datetime
+    *, state_store: SqliteSchedulerStateStore, reference_now: datetime
 ) -> SchedulerState:
     state = state_store.load()
     state.last_attempt_at = reference_now.isoformat()
@@ -154,22 +153,22 @@ def _load_and_mark_attempt(
 
 def _execute_due_run(
     *,
-    state_store: JsonSchedulerStateStore,
+    state_store: SqliteSchedulerStateStore,
     state: SchedulerState,
     digest_kind: DigestKind,
     local_date: str,
     due: bool,
     force: bool,
     reference_now: datetime,
-    sent_store_path: Path,
+    db_path: Path,
     target_items: int,
     messenger: Messenger | None,
-    sent_message_store: JsonSentMessageStore | None,
+    sent_message_store: SqliteSentMessageStore | None,
 ) -> ScheduleRunResult:
     try:
         pipeline_result = run_full_pipeline(
             context=build_fetch_context(collected_at=reference_now),
-            sent_store_path=sent_store_path_for_kind(sent_store_path, digest_kind=digest_kind),
+            db_path=db_path,
             target_items=target_items,
             digest_kind=digest_kind,
         )
@@ -202,7 +201,7 @@ def _execute_due_run(
             exc=exc,
         )
     _persist_sent_message(
-        store=sent_message_store or JsonSentMessageStore(Path(".data/sent_messages.json")),
+        store=sent_message_store or SqliteSentMessageStore(db_path),
         message_key=message_key,
         digest_kind=digest_kind,
         local_date=local_date,
@@ -226,7 +225,7 @@ def _execute_due_run(
 
 def _persist_sent_message(
     *,
-    store: JsonSentMessageStore,
+    store: SqliteSentMessageStore,
     message_key: str,
     digest_kind: DigestKind,
     local_date: str,
