@@ -10,7 +10,7 @@ from berlin_insider.curator.store import SqliteSentItemStore
 from berlin_insider.digest import DigestKind
 from berlin_insider.feedback.models import FeedbackEvent, SentMessageRecord
 from berlin_insider.feedback.store import SqliteFeedbackStore, SqliteSentMessageStore
-from berlin_insider.storage.sqlite import sqlite_connection
+from berlin_insider.storage.sqlite import ensure_schema, sqlite_connection
 
 
 def test_sent_links_dedupe_is_safe_on_insert_conflict(tmp_path: Path) -> None:
@@ -100,3 +100,34 @@ def test_feedback_events_upsert_deduplicates_by_message_and_user(tmp_path: Path)
     )
 
     assert feedback_store.count() == 1
+
+
+def test_ensure_schema_adds_detail_text_column_to_existing_db(tmp_path: Path) -> None:
+    db_path = tmp_path / "legacy.db"
+    with sqlite3.connect(db_path) as conn:
+        conn.executescript(
+            """
+            CREATE TABLE parsed_items (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              run_id TEXT NOT NULL,
+              source_id TEXT NOT NULL,
+              item_url TEXT NOT NULL,
+              title TEXT,
+              description TEXT,
+              event_start_at TEXT,
+              event_end_at TEXT,
+              location TEXT,
+              category TEXT NOT NULL,
+              category_confidence REAL NOT NULL,
+              weekend_relevance TEXT NOT NULL,
+              weekend_confidence REAL NOT NULL,
+              parse_notes_json TEXT NOT NULL,
+              raw_json TEXT NOT NULL
+            );
+            """
+        )
+    ensure_schema(db_path)
+    with sqlite_connection(db_path) as conn:
+        columns = conn.execute("PRAGMA table_info(parsed_items)").fetchall()
+    column_names = {str(column[1]) for column in columns}
+    assert "detail_text" in column_names

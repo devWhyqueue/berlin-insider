@@ -41,6 +41,7 @@ def test_persist_parse_run_stores_run_and_items(tmp_path: Path) -> None:
                         item_url="https://example.com/item",
                         title="Item",
                         description="Desc",
+                        detail_text="Long detail text",
                         event_start_at=datetime(2026, 2, 28, 18, 0, tzinfo=UTC),
                         event_end_at=None,
                         location="Berlin",
@@ -64,10 +65,14 @@ def test_persist_parse_run_stores_run_and_items(tmp_path: Path) -> None:
 
     with sqlite_connection(db_path) as conn:
         run_row = conn.execute("SELECT run_id, total_items FROM parse_runs").fetchone()
-        item_row = conn.execute("SELECT source_id, item_url FROM parsed_items WHERE run_id = ?", (run_id,)).fetchone()
+        item_row = conn.execute(
+            "SELECT source_id, item_url, detail_text FROM parsed_items WHERE run_id = ?",
+            (run_id,),
+        ).fetchone()
     assert run_row is not None
     assert run_row[0] == run_id
     assert run_row[1] == 1
     assert item_row is not None
     assert item_row[0] == SourceId.MITVERGNUEGEN.value
     assert item_row[1] == "https://example.com/item"
+    assert item_row[2] == "Long detail text"

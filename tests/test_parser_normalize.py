@@ -10,6 +10,7 @@ def _item(
     source_id: SourceId = SourceId.BERLIN_FOOD_STORIES_NEWS,
     title: str | None = "  Great   Food   Spot  ",
     snippet: str | None = "  Amazing   brunch place  ",
+    detail_text: str | None = None,
     raw_date_text: str | None = None,
     published_at: datetime | None = None,
 ) -> FetchedItem:
@@ -25,6 +26,8 @@ def _item(
         fetch_method=FetchMethod.HTML,
         collected_at=datetime(2026, 2, 27, 8, 0, tzinfo=UTC),
         metadata={},
+        detail_text=detail_text,
+        detail_status=None,
     )
 
 
@@ -80,3 +83,30 @@ def test_normalize_unknown_date_marks_unknown_weekend() -> None:
     )
     assert parsed.event_start_at is None
     assert parsed.weekend_relevance == WeekendRelevance.UNKNOWN
+
+
+def test_normalize_prefers_detail_text_over_snippet() -> None:
+    parsed = normalize_fetched_item(
+        _item(
+            title="Weekend Art Night",
+            snippet="short snippet",
+            detail_text="Detailed exhibition and concert guide in Berlin this weekend.",
+            published_at=datetime(2026, 2, 28, 10, 0, tzinfo=UTC),
+        ),
+        reference_now=datetime(2026, 2, 27, 10, 0, tzinfo=UTC),
+    )
+    assert parsed.detail_text == "Detailed exhibition and concert guide in Berlin this weekend."
+    assert parsed.description == "Detailed exhibition and concert guide in Berlin this weekend."
+
+
+def test_normalize_falls_back_to_snippet_when_detail_missing() -> None:
+    parsed = normalize_fetched_item(
+        _item(
+            snippet="Listing-only summary",
+            detail_text=None,
+            published_at=datetime(2026, 2, 28, 10, 0, tzinfo=UTC),
+        ),
+        reference_now=datetime(2026, 2, 27, 10, 0, tzinfo=UTC),
+    )
+    assert parsed.detail_text is None
+    assert parsed.description == "Listing-only summary"

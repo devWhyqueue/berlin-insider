@@ -19,7 +19,8 @@ def normalize_fetched_item(item: FetchedItem, *, reference_now: datetime) -> Par
     """Convert one fetched item into a normalized parsed item."""
     notes: list[str] = []
     title = _normalize_text(item.title)
-    description = _normalize_description(item.snippet)
+    detail_text = _normalize_detail_text(item.detail_text)
+    description = _normalize_description(detail_text or item.snippet)
     location = _normalize_text(item.location_hint)
     event_start_at = derive_event_start(item, reference_now=reference_now, notes=notes)
     category = infer_category(item, title=title, description=description, location=location)
@@ -29,6 +30,7 @@ def normalize_fetched_item(item: FetchedItem, *, reference_now: datetime) -> Par
         item=item,
         title=title,
         description=description,
+        detail_text=detail_text,
         location=location,
         event_start_at=event_start_at,
         notes=notes,
@@ -59,6 +61,7 @@ def _to_parsed_item(
     item: FetchedItem,
     title: str | None,
     description: str | None,
+    detail_text: str | None,
     location: str | None,
     event_start_at: datetime | None,
     notes: list[str],
@@ -70,6 +73,7 @@ def _to_parsed_item(
         item_url=item.item_url,
         title=title,
         description=description,
+        detail_text=detail_text,
         event_start_at=event_start_at,
         event_end_at=parse_end_date(item.metadata.get("end_date")),
         location=location,
@@ -82,6 +86,7 @@ def _to_parsed_item(
             "raw_date_text": item.raw_date_text,
             "metadata": item.metadata,
             "fetch_method": item.fetch_method.value,
+            "detail_status": item.detail_status,
         },
     )
 
@@ -98,3 +103,7 @@ def _normalize_description(value: str | None) -> str | None:
     if normalized is None or len(normalized) <= DESCRIPTION_MAX_CHARS:
         return normalized
     return normalized[: DESCRIPTION_MAX_CHARS - 1].rstrip() + "…"
+
+
+def _normalize_detail_text(value: str | None) -> str | None:
+    return _normalize_text(value)

@@ -58,6 +58,8 @@ class FetchedItem:
     fetch_method: FetchMethod
     collected_at: datetime
     metadata: dict[str, Any] = field(default_factory=dict)
+    detail_text: str | None = None
+    detail_status: str | None = None
 
 
 @dataclass(slots=True)

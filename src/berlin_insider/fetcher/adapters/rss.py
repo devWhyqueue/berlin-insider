@@ -14,7 +14,7 @@ from berlin_insider.fetcher.models import (
     FetchStatus,
     SourceFetchResult,
 )
-from berlin_insider.fetcher.utils import parse_datetime
+from berlin_insider.fetcher.utils import enrich_items_with_detail, parse_datetime
 
 
 @dataclass(slots=True)
@@ -48,13 +48,16 @@ class RssAdapter(SourceAdapter):
             timeout_seconds=context.timeout_seconds,
             on_retry=warnings.append,
         )
-        return parse_rss_items(
+        parsed_items = parse_rss_items(
             xml_text=xml_text,
             source_id=self.definition.source_id,
             source_url=self.definition.source_url,
             collected_at=context.collected_at,
             max_items=context.max_items_per_source,
         )
+        enriched_items, detail_warnings = enrich_items_with_detail(parsed_items, context=context)
+        warnings.extend(detail_warnings)
+        return enriched_items
 
 
 def parse_rss_items(

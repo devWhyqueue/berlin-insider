@@ -7,6 +7,7 @@ from berlin_insider.fetcher.base import SourceAdapter, SourceDefinition
 from berlin_insider.fetcher.http import get_text_with_retries
 from berlin_insider.fetcher.models import FetchContext, FetchStatus, SourceFetchResult
 from berlin_insider.fetcher.parsers.common import Parser
+from berlin_insider.fetcher.utils import enrich_items_with_detail
 
 
 @dataclass(slots=True)
@@ -37,7 +38,10 @@ class HtmlAdapter(SourceAdapter):
             on_retry=warnings.append,
         )
         items = self.parser(html, self.definition, context)
-        return items[: context.max_items_per_source]
+        selected_items = items[: context.max_items_per_source]
+        enriched_items, detail_warnings = enrich_items_with_detail(selected_items, context=context)
+        warnings.extend(detail_warnings)
+        return enriched_items
 
 
 def _success_result(source_id, status, items, warnings, started: float) -> SourceFetchResult:

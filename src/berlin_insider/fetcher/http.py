@@ -4,6 +4,7 @@ import time
 from collections.abc import Callable
 
 import httpx
+from playwright.sync_api import sync_playwright
 
 RETRYABLE_STATUS_CODES = {429, 500, 502, 503, 504}
 
@@ -34,6 +35,19 @@ def get_text_with_retries(
             _emit_retry(on_retry, url, str(exc), attempt + 1)
             time.sleep(2**attempt)
     raise RuntimeError(f"Unexpected retry termination for {url}")
+
+
+def get_text_with_playwright(url: str, *, timeout_seconds: float) -> str:
+    """Fetch a URL with Playwright for pages gated by JS challenges."""
+    timeout_ms = int(timeout_seconds * 1000)
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch(headless=True)
+        page = browser.new_page()
+        page.goto(url, wait_until="networkidle", timeout=max(timeout_ms, 45000))
+        page.wait_for_timeout(2500)
+        html = page.content()
+        browser.close()
+    return html
 
 
 def _emit_retry(

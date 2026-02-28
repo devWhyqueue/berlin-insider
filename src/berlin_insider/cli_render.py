@@ -104,7 +104,7 @@ def _item_preview(item: FetchedItem) -> str:
     snippet_text = snippet[:60] + ("..." if len(snippet) > 60 else "")
     return (
         f"{title} | {date} | {location} | method={item.fetch_method} | "
-        f"meta={len(item.metadata)} | {snippet_text}"
+        f"meta={len(item.metadata)} | detail={'yes' if item.detail_text else 'no'} | {snippet_text}"
     )
 
 

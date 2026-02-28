@@ -8,6 +8,7 @@ from playwright.sync_api import sync_playwright
 from berlin_insider.fetcher.base import SourceAdapter, SourceDefinition
 from berlin_insider.fetcher.models import FetchContext, FetchStatus, SourceFetchResult
 from berlin_insider.fetcher.parsers.tip_berlin import extract_tip_berlin_items_from_html
+from berlin_insider.fetcher.utils import enrich_items_with_detail
 
 
 @dataclass(slots=True)
@@ -56,8 +57,10 @@ def _fetch_success(
         timeout_seconds=context.timeout_seconds,
     )
     items = extract_tip_berlin_items_from_html(html, definition, context)
-    status = FetchStatus.SUCCESS if items else FetchStatus.PARTIAL
     warnings = [] if items else ["Playwright rendered page, but no event links were parsed"]
+    items, detail_warnings = enrich_items_with_detail(items, context=context)
+    warnings.extend(detail_warnings)
+    status = FetchStatus.SUCCESS if items else FetchStatus.PARTIAL
     return SourceFetchResult(
         source_id=definition.source_id,
         status=status,

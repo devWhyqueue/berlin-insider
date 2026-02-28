@@ -41,42 +41,51 @@ def persist_parse_run(db_path: Path, parse_result: ParseRunResult) -> str:
     ensure_schema(db_path)
     run_id = _build_run_id(parse_result.finished_at.isoformat())
     with sqlite_connection(db_path) as conn:
-        conn.execute(
-            """
-            INSERT INTO parse_runs (run_id, started_at, finished_at, total_items, failed_sources_json)
-            VALUES (?, ?, ?, ?, ?)
-            """,
-            (
-                run_id,
-                parse_result.started_at.isoformat(),
-                parse_result.finished_at.isoformat(),
-                parse_result.total_items,
-                json.dumps([source_id.value for source_id in parse_result.failed_sources]),
-            ),
-        )
-        conn.executemany(
-            """
-            INSERT INTO parsed_items (
-                run_id,
-                source_id,
-                item_url,
-                title,
-                description,
-                event_start_at,
-                event_end_at,
-                location,
-                category,
-                category_confidence,
-                weekend_relevance,
-                weekend_confidence,
-                parse_notes_json,
-                raw_json
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            _parsed_item_rows(run_id, parse_result),
-        )
+        _insert_parse_run(conn, run_id, parse_result)
+        _insert_parsed_items(conn, run_id, parse_result)
         conn.commit()
     return run_id
+
+
+def _insert_parse_run(conn, run_id: str, parse_result: ParseRunResult) -> None:
+    conn.execute(
+        """
+        INSERT INTO parse_runs (run_id, started_at, finished_at, total_items, failed_sources_json)
+        VALUES (?, ?, ?, ?, ?)
+        """,
+        (
+            run_id,
+            parse_result.started_at.isoformat(),
+            parse_result.finished_at.isoformat(),
+            parse_result.total_items,
+            json.dumps([source_id.value for source_id in parse_result.failed_sources]),
+        ),
+    )
+
+
+def _insert_parsed_items(conn, run_id: str, parse_result: ParseRunResult) -> None:
+    conn.executemany(
+        """
+        INSERT INTO parsed_items (
+            run_id,
+            source_id,
+            item_url,
+            title,
+            description,
+            detail_text,
+            event_start_at,
+            event_end_at,
+            location,
+            category,
+            category_confidence,
+            weekend_relevance,
+            weekend_confidence,
+            parse_notes_json,
+            raw_json
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        _parsed_item_rows(run_id, parse_result),
+    )
 
 
 def _parsed_item_rows(run_id: str, parse_result: ParseRunResult) -> list[tuple[object, ...]]:
@@ -90,6 +99,7 @@ def _parsed_item_rows(run_id: str, parse_result: ParseRunResult) -> list[tuple[o
                     item.item_url,
                     item.title,
                     item.description,
+                    item.detail_text,
                     item.event_start_at.isoformat() if item.event_start_at else None,
                     item.event_end_at.isoformat() if item.event_end_at else None,
                     item.location,
