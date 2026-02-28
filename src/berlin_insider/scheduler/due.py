@@ -58,9 +58,7 @@ def _scheduled_time_for_kind(*, digest_kind: DigestKind, config: ScheduleConfig)
 def _expected_digest_kind(local_weekday: int, *, weekend_weekday: int) -> DigestKind | None:
     if local_weekday == weekend_weekday:
         return DigestKind.WEEKEND
-    if local_weekday in {0, 1, 2, 3}:
-        return DigestKind.DAILY
-    return None
+    return DigestKind.DAILY
 
 
 def _last_run_date_for_kind(state: SchedulerState, *, digest_kind: DigestKind) -> str | None:

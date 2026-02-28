@@ -31,7 +31,7 @@ uv run berlin-insider feedback
 ## Scheduler
 
 `schedule` is a one-shot command meant to be called by an external scheduler.
-By default it runs daily tips on Monday-Thursday 08:00 and weekend digests on Friday 08:00 in
+By default it runs daily tips on every day except Friday at 08:00 and weekend digests on Friday 08:00 in
 `Europe/Berlin`, and persists operational state in `.data/berlin_insider.db`.
 When a run executes, it also sends the digest through Telegram.
 
@@ -59,6 +59,116 @@ Example Task Scheduler action (Windows):
 ```powershell
 uv run berlin-insider schedule
 ```
+
+## Deploy on Ubuntu (systemd)
+
+The scheduler command is one-shot and should be triggered by a timer.
+This setup assumes the repo is cloned at `~/berlin-insider` and `.env` exists there.
+
+1. Install runtime dependencies:
+
+```bash
+sudo apt update
+sudo apt install -y git curl ca-certificates
+curl -LsSf https://astral.sh/uv/install.sh | sh
+source "$HOME/.local/bin/env"
+```
+
+2. Install project dependencies:
+
+```bash
+cd ~/berlin-insider
+uv sync --all-groups
+uv run playwright install --with-deps chromium
+```
+
+3. Create systemd service (`/etc/systemd/system/berlin-insider-schedule.service`):
+
+```ini
+[Unit]
+Description=Berlin Insider scheduler one-shot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=<your-linux-username>
+WorkingDirectory=/home/<your-linux-username>/berlin-insider
+ExecStart=/home/<your-linux-username>/.local/bin/uv run berlin-insider schedule --timezone Europe/Berlin --db-path .data/berlin_insider.db
+```
+
+4. Create systemd timer (`/etc/systemd/system/berlin-insider-schedule.timer`):
+
+```ini
+[Unit]
+Description=Run Berlin Insider scheduler every 15 minutes
+
+[Timer]
+OnBootSec=2m
+OnUnitActiveSec=15m
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+```
+
+5. Enable timer:
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable --now berlin-insider-schedule.timer
+```
+
+6. Verify:
+
+```bash
+systemctl status berlin-insider-schedule.timer
+journalctl -u berlin-insider-schedule.service -n 100 --no-pager
+```
+
+## Troubleshooting
+
+Check timer/service health:
+
+```bash
+systemctl list-timers --all | grep berlin-insider
+systemctl status berlin-insider-schedule.timer
+systemctl status berlin-insider-schedule.service
+```
+
+Read recent scheduler logs:
+
+```bash
+journalctl -u berlin-insider-schedule.service -n 200 --no-pager
+journalctl -u berlin-insider-schedule.service -f
+```
+
+Run a manual non-forced diagnostic:
+
+```bash
+cd ~/berlin-insider
+~/.local/bin/uv run berlin-insider schedule --json
+```
+
+Run a forced send test:
+
+```bash
+cd ~/berlin-insider
+~/.local/bin/uv run berlin-insider schedule --force --json
+```
+
+Inspect unit configuration:
+
+```bash
+systemctl cat berlin-insider-schedule.service
+```
+
+Default schedule behavior:
+
+- `WEEKEND` digest: Friday at 08:00 (`Europe/Berlin`)
+- `DAILY` digest: every other day at 08:00 (`Europe/Berlin`)
+
+If you miss a message, the JSON output and logs usually explain why in fields like `due`, `reason`, `status`, and `delivered`.
 
 ## Feedback polling
 

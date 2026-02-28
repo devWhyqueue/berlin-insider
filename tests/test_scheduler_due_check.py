@@ -64,13 +64,13 @@ def test_due_check_not_due_if_already_ran_today_for_kind() -> None:
     assert digest_kind == DigestKind.WEEKEND
 
 
-def test_due_check_not_due_on_saturday_no_digest() -> None:
+def test_due_check_daily_due_on_saturday() -> None:
     due, reason, local_date, digest_kind = is_due(
         now_utc=datetime(2026, 2, 28, 8, 0, tzinfo=UTC),
         config=ScheduleConfig(timezone="UTC"),
         state=SchedulerState(),
     )
-    assert due is False
-    assert "no scheduled digest" in reason
+    assert due is True
+    assert reason == "run is due"
     assert local_date == "2026-02-28"
-    assert digest_kind is None
+    assert digest_kind == DigestKind.DAILY
