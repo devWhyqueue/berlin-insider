@@ -238,3 +238,20 @@ def test_load_dotenv_defaults_sets_missing_values_only(monkeypatch, tmp_path: Pa
     assert cli.os.environ["OPENAI_API_KEY"] == "preexisting"
     assert cli.os.environ["TELEGRAM_CHAT_ID"] == "from_file_chat"
     assert cli.os.environ["TELEGRAM_BOT_TOKEN"] == "file_token"
+
+
+def test_load_dotenv_defaults_parses_export_quotes_and_inline_comments(
+    monkeypatch, tmp_path: Path
+) -> None:
+    env_file = tmp_path / ".env"
+    env_file.write_text(
+        "export OPENAI_API_KEY='sk-test-123'\nOPENAI_SUMMARY_MODEL=gpt-5-mini # trailing note\n",
+        encoding="utf-8",
+    )
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("OPENAI_SUMMARY_MODEL", raising=False)
+
+    cli._load_dotenv_defaults(env_file)
+
+    assert cli.os.environ["OPENAI_API_KEY"] == "sk-test-123"
+    assert cli.os.environ["OPENAI_SUMMARY_MODEL"] == "gpt-5-mini"

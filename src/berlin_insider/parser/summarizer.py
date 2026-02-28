@@ -41,7 +41,7 @@ class OpenAISummaryGenerator:
     def from_env(cls, env: Mapping[str, str] | None = None) -> SummaryGenerator:
         """Build a summary generator from OPENAI_* environment variables."""
         source = env if env is not None else os.environ
-        api_key = source.get("OPENAI_API_KEY")
+        api_key = (source.get("OPENAI_API_KEY") or "").strip().strip("'\"")
         if not api_key:
             return NoOpSummaryGenerator()
         timeout = float(source.get("OPENAI_SUMMARY_TIMEOUT_SECONDS", _DEFAULT_TIMEOUT_SECONDS))

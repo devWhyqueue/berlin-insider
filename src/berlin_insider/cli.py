@@ -214,9 +214,22 @@ def _load_dotenv_defaults(path: Path | None = None) -> None:
         line = raw_line.strip()
         if not line or line.startswith("#") or "=" not in line:
             continue
+        if line.startswith("export "):
+            line = line[len("export ") :].strip()
         key, value = line.split("=", 1)
         key = key.strip()
         if not key:
             continue
-        parsed = value.strip().strip("'\"")
+        parsed = _parse_dotenv_value(value)
         os.environ.setdefault(key, parsed)
+
+
+def _parse_dotenv_value(raw_value: str) -> str:
+    value = raw_value.strip()
+    if not value:
+        return ""
+    if (value.startswith('"') and value.endswith('"')) or (
+        value.startswith("'") and value.endswith("'")
+    ):
+        return value[1:-1]
+    return value.split(" #", 1)[0].strip()

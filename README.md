@@ -170,6 +170,24 @@ Default schedule behavior:
 
 If you miss a message, the JSON output and logs usually explain why in fields like `due`, `reason`, `status`, and `delivered`.
 
+If OpenAI summaries fail with `401`:
+
+1. Confirm the key is loaded in the same shell/process:
+
+```bash
+cd ~/berlin-insider
+~/.local/bin/uv run python -c "import berlin_insider.cli as c, os; c._load_dotenv_defaults(); k=os.getenv('OPENAI_API_KEY',''); print('loaded=', bool(k), 'prefix=', k[:12])"
+```
+
+2. Run an opt-in live OpenAI smoke test:
+
+```bash
+cd ~/berlin-insider
+RUN_LIVE_OPENAI_TESTS=1 ~/.local/bin/uv run pytest tests/test_parser_summarizer.py -k live_openai_summary_smoke -q
+```
+
+3. If it still returns `401`, rotate the key in OpenAI dashboard and update `.env`.
+
 ## Feedback polling
 
 `feedback` is a one-shot command that polls Telegram callback updates (`getUpdates`) and persists
