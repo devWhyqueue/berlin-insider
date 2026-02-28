@@ -78,6 +78,15 @@ class TelegramMessenger:
         """Acknowledge callback query events."""
         self._post_api("answerCallbackQuery", payload={"callback_query_id": callback_query_id})
 
+    def set_webhook(self, *, url: str) -> None:
+        """Configure Telegram webhook endpoint for this bot."""
+        response = self._post_api("setWebhook", payload={"url": url})
+        payload_obj = _json_payload(response)
+        if payload_obj.get("ok") is not True:
+            description = payload_obj.get("description")
+            message = description if isinstance(description, str) else "unknown telegram error"
+            raise MessengerError(f"telegram webhook registration failed: {message}")
+
     def _post_send_message(
         self, *, text: str, feedback_metadata: FeedbackMetadata | None = None
     ) -> httpx.Response:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 
 from berlin_insider.digest import DigestKind
 from berlin_insider.fetcher.models import SourceId
@@ -8,12 +9,11 @@ from berlin_insider.pipeline import DEFAULT_USER_AGENT
 
 
 def build_parser() -> argparse.ArgumentParser:
-    """Build the CLI parser with fetch, schedule, and feedback commands."""
+    """Build the CLI parser with fetch and worker commands."""
     parser = argparse.ArgumentParser(prog="berlin-insider")
     sub = parser.add_subparsers(dest="command")
     _add_fetch_parser(sub)
-    _add_schedule_parser(sub)
-    _add_feedback_parser(sub)
+    _add_worker_parser(sub)
     return parser
 
 
@@ -68,59 +68,71 @@ def _add_fetch_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) 
     )
 
 
-def _add_schedule_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
-    schedule = sub.add_parser("schedule", help="Run scheduler once (for cron/task scheduler)")
-    schedule.add_argument("--json", action="store_true", help="Print full JSON output")
-    schedule.add_argument(
-        "--timezone", default="Europe/Berlin", help="IANA timezone used for due checks"
+def _add_worker_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
+    worker = sub.add_parser("worker", help="Run always-on worker with scheduler and webhook")
+    worker.add_argument(
+        "--timezone",
+        default=os.getenv("WORKER_TIMEZONE", "Europe/Berlin"),
+        help="IANA timezone used for schedule rules",
     )
-    schedule.add_argument(
+    worker.add_argument(
         "--weekend-weekday",
-        default="friday",
+        default=os.getenv("WORKER_WEEKEND_WEEKDAY", "friday"),
         help="Lowercase weekday name for weekend digest (for example: friday)",
     )
-    schedule.add_argument(
+    worker.add_argument(
         "--weekend-hour",
         type=int,
-        default=8,
+        default=int(os.getenv("WORKER_WEEKEND_HOUR", "8")),
         help="Weekend digest scheduled hour in local timezone",
     )
-    schedule.add_argument(
+    worker.add_argument(
         "--weekend-minute",
         type=int,
-        default=0,
+        default=int(os.getenv("WORKER_WEEKEND_MINUTE", "0")),
         help="Weekend digest scheduled minute in local timezone",
     )
-    schedule.add_argument(
-        "--daily-hour", type=int, default=8, help="Daily tip scheduled hour in local timezone"
-    )
-    schedule.add_argument(
-        "--daily-minute", type=int, default=0, help="Daily tip scheduled minute in local timezone"
-    )
-    schedule.add_argument(
-        "--db-path",
-        default=".data/berlin_insider.db",
-        help="Path to SQLite database file",
-    )
-    schedule.add_argument("--target-items", type=int, default=7, help="Weekend target item count")
-    schedule.add_argument(
-        "--force", action="store_true", help="Bypass due check and run immediately"
-    )
-
-
-def _add_feedback_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
-    feedback = sub.add_parser(
-        "feedback", help="Poll Telegram callback updates and persist thumbs feedback"
-    )
-    feedback.add_argument("--json", action="store_true", help="Print full JSON output")
-    feedback.add_argument(
-        "--db-path",
-        default=".data/berlin_insider.db",
-        help="Path to SQLite database file",
-    )
-    feedback.add_argument(
-        "--poll-timeout-seconds",
+    worker.add_argument(
+        "--daily-hour",
         type=int,
-        default=0,
-        help="Telegram getUpdates timeout seconds",
+        default=int(os.getenv("WORKER_DAILY_HOUR", "8")),
+        help="Daily tip scheduled hour in local timezone",
+    )
+    worker.add_argument(
+        "--daily-minute",
+        type=int,
+        default=int(os.getenv("WORKER_DAILY_MINUTE", "0")),
+        help="Daily tip scheduled minute in local timezone",
+    )
+    worker.add_argument(
+        "--db-path",
+        default=os.getenv("WORKER_DB_PATH", ".data/berlin_insider.db"),
+        help="Path to SQLite database file",
+    )
+    worker.add_argument(
+        "--target-items",
+        type=int,
+        default=int(os.getenv("WORKER_TARGET_ITEMS", "7")),
+        help="Weekend target item count",
+    )
+    worker.add_argument(
+        "--host",
+        default=os.getenv("WORKER_HOST", "0.0.0.0"),
+        help="Host address for webhook HTTP server",
+    )
+    worker.add_argument(
+        "--port",
+        type=int,
+        default=int(os.getenv("WORKER_PORT", "8080")),
+        help="Port for webhook HTTP server",
+    )
+    worker.add_argument(
+        "--webhook-public-base-url",
+        default=os.getenv("WEBHOOK_PUBLIC_BASE_URL"),
+        help="Public base URL Telegram should call for webhook delivery",
+    )
+    worker.add_argument(
+        "--telegram-webhook-secret",
+        default=os.getenv("TELEGRAM_WEBHOOK_SECRET"),
+        help="Secret token embedded in webhook path",
     )

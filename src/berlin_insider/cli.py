@@ -18,23 +18,14 @@ from berlin_insider.curator.models import CurateRunResult
 from berlin_insider.curator.orchestrator import Curator
 from berlin_insider.curator.store import SqliteSentItemStore
 from berlin_insider.digest import DigestKind
-from berlin_insider.feedback.store import (
-    SqliteFeedbackStore,
-    SqliteSentMessageStore,
-    SqliteTelegramUpdatesStateStore,
-)
-from berlin_insider.feedback.telegram_poller import poll_feedback_once
 from berlin_insider.fetcher.models import FetchContext, FetchRunResult, SourceId
 from berlin_insider.fetcher.orchestrator import Fetcher
 from berlin_insider.formatter import render_telegram_digest
-from berlin_insider.messenger.telegram import TelegramMessenger
 from berlin_insider.parser.models import ParseRunResult
 from berlin_insider.parser.orchestrator import Parser
-from berlin_insider.scheduler.cli_log import log_schedule_result
 from berlin_insider.scheduler.models import ScheduleConfig
-from berlin_insider.scheduler.orchestrator import Scheduler
-from berlin_insider.scheduler.store import SqliteSchedulerStateStore
 from berlin_insider.storage.content_store import persist_parse_run, upsert_source_websites
+from berlin_insider.worker import Worker, WorkerConfig
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO, format="%(message)s")
@@ -47,10 +38,8 @@ def main() -> None:
     args = parser.parse_args()
     if args.command == "fetch":
         _run_fetch_command(args)
-    elif args.command == "schedule":
-        _exit_on_nonzero(_run_schedule_command(args))
-    elif args.command == "feedback":
-        _exit_on_nonzero(_run_feedback_command(args))
+    elif args.command == "worker":
+        _run_worker_command(args)
     else:
         parser.print_help()
 
@@ -89,49 +78,30 @@ def _run_fetch_command(args) -> None:  # noqa: ANN001
     )
 
 
-def _run_schedule_command(args) -> int:  # noqa: ANN001
+def _run_worker_command(args) -> None:  # noqa: ANN001
     db_path = Path(args.db_path)
-    result = Scheduler().run_once(
-        state_store=SqliteSchedulerStateStore(db_path),
-        config=ScheduleConfig(
-            timezone=args.timezone,
-            daily_hour=args.daily_hour,
-            daily_minute=args.daily_minute,
-            weekend_weekday=args.weekend_weekday,
-            weekend_hour=args.weekend_hour,
-            weekend_minute=args.weekend_minute,
-        ),
-        db_path=db_path,
-        target_items=args.target_items,
-        force=args.force,
-        sent_message_store=SqliteSentMessageStore(db_path),
-    )
-    log_schedule_result(logger, result, json_output=args.json)
-    return result.exit_code
-
-
-def _run_feedback_command(args) -> int:  # noqa: ANN001
-    db_path = Path(args.db_path)
-    result = poll_feedback_once(
-        messenger=TelegramMessenger.from_env(),
-        state_store=SqliteTelegramUpdatesStateStore(db_path),
-        feedback_store=SqliteFeedbackStore(db_path),
-        sent_message_store=SqliteSentMessageStore(db_path),
-        timeout_seconds=args.poll_timeout_seconds,
-    )
-    if args.json:
-        logger.info(json.dumps(asdict(result), default=str, ensure_ascii=False, indent=2))
-    else:
-        logger.info(
-            "Feedback poll: fetched=%s processed=%s persisted=%s ignored=%s answered=%s next_offset=%s",
-            result.fetched_updates,
-            result.processed_callbacks,
-            result.persisted_votes,
-            result.ignored_updates,
-            result.answered_callbacks,
-            result.next_offset if result.next_offset is not None else "n/a",
+    if not args.webhook_public_base_url:
+        raise SystemExit("WEBHOOK_PUBLIC_BASE_URL is required (or use --webhook-public-base-url).")
+    if not args.telegram_webhook_secret:
+        raise SystemExit("TELEGRAM_WEBHOOK_SECRET is required (or use --telegram-webhook-secret).")
+    Worker(
+        config=WorkerConfig(
+            db_path=db_path,
+            target_items=args.target_items,
+            schedule=ScheduleConfig(
+                timezone=args.timezone,
+                daily_hour=args.daily_hour,
+                daily_minute=args.daily_minute,
+                weekend_weekday=args.weekend_weekday,
+                weekend_hour=args.weekend_hour,
+                weekend_minute=args.weekend_minute,
+            ),
+            host=args.host,
+            port=args.port,
+            webhook_public_base_url=args.webhook_public_base_url,
+            telegram_webhook_secret=args.telegram_webhook_secret,
         )
-    return 0
+    ).run()
 
 
 def _fetch_context(args) -> FetchContext:  # noqa: ANN001
@@ -198,11 +168,6 @@ def _log_fetch_with_parse_and_curate(
         )
         return
     logger.info(render_summary_with_parse_and_curate(fetch_result, parse_result, curate_result))
-
-
-def _exit_on_nonzero(exit_code: int) -> None:
-    if exit_code != 0:
-        raise SystemExit(exit_code)
 
 
 def _load_dotenv_defaults(path: Path | None = None) -> None:

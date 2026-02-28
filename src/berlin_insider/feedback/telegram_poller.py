@@ -4,13 +4,8 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Protocol
 
-from berlin_insider.digest import DigestKind
-from berlin_insider.feedback.models import (
-    FeedbackEvent,
-    FeedbackPollResult,
-    FeedbackVote,
-    TelegramUpdatesState,
-)
+from berlin_insider.feedback.ingest import ingest_feedback_update
+from berlin_insider.feedback.models import FeedbackPollResult, TelegramUpdatesState
 from berlin_insider.feedback.store import (
     SqliteFeedbackStore,
     SqliteSentMessageStore,
@@ -80,81 +75,20 @@ def _apply_update(
     sent_message_store: SqliteSentMessageStore,
 ) -> None:
     _track_update_id(update, counters)
-    callback_query = update.get("callback_query")
-    if not isinstance(callback_query, dict):
-        counters.ignored_updates += 1
-        return
-    counters.processed_callbacks += 1
-    accepted = _process_callback(
-        callback_query=callback_query,
+    result = ingest_feedback_update(
+        update=update,
         messenger=messenger,
         feedback_store=feedback_store,
         sent_message_store=sent_message_store,
-        counters=counters,
     )
-    if accepted:
+    if result.processed_callback:
+        counters.processed_callbacks += 1
+    if result.persisted_vote:
         counters.persisted_votes += 1
-        return
-    counters.ignored_updates += 1
-
-
-def _process_callback(
-    *,
-    callback_query: dict[str, object],
-    messenger: FeedbackMessenger,
-    feedback_store: SqliteFeedbackStore,
-    sent_message_store: SqliteSentMessageStore,
-    counters: _PollCounters,
-) -> bool:
-    parsed = _parse_feedback_callback(callback_query)
-    callback_id = callback_query.get("id")
-    if parsed is None:
-        _ack_if_possible(messenger, callback_id, counters)
-        return False
-    message_key, digest_kind, vote = parsed
-    if sent_message_store.get(message_key) is None:
-        _ack_if_possible(messenger, callback_id, counters)
-        return False
-    feedback_event = _event_from_callback(
-        callback_query=callback_query,
-        message_key=message_key,
-        digest_kind=digest_kind,
-        vote=vote,
-    )
-    if feedback_event is None:
-        _ack_if_possible(messenger, callback_id, counters)
-        return False
-    feedback_store.upsert(feedback_event)
-    _ack_if_possible(messenger, callback_id, counters)
-    return True
-
-
-def _event_from_callback(
-    *,
-    callback_query: dict[str, object],
-    message_key: str,
-    digest_kind: DigestKind,
-    vote: FeedbackVote,
-) -> FeedbackEvent | None:
-    user_obj = callback_query.get("from")
-    user_id = user_obj.get("id") if isinstance(user_obj, dict) else None
-    message_obj = callback_query.get("message")
-    message_id_obj = message_obj.get("message_id") if isinstance(message_obj, dict) else None
-    chat_obj = message_obj.get("chat") if isinstance(message_obj, dict) else None
-    chat_id_obj = chat_obj.get("id") if isinstance(chat_obj, dict) else None
-    if not isinstance(user_id, int) or not isinstance(message_id_obj, int):
-        return None
-    now_iso = datetime.now(UTC).isoformat()
-    return FeedbackEvent(
-        message_key=message_key,
-        digest_kind=digest_kind,
-        vote=vote,
-        telegram_user_id=user_id,
-        chat_id=str(chat_id_obj) if chat_id_obj is not None else "",
-        message_id=str(message_id_obj),
-        voted_at=now_iso,
-        updated_at=now_iso,
-    )
+    if result.ignored:
+        counters.ignored_updates += 1
+    if result.answered_callback:
+        counters.answered_callbacks += 1
 
 
 def _track_update_id(update: dict[str, object], counters: _PollCounters) -> None:
@@ -165,35 +99,6 @@ def _track_update_id(update: dict[str, object], counters: _PollCounters) -> None
         counters.max_update_id = update_id
         return
     counters.max_update_id = max(counters.max_update_id, update_id)
-
-
-def _ack_if_possible(
-    messenger: FeedbackMessenger, callback_id: object, counters: _PollCounters
-) -> None:
-    if not isinstance(callback_id, str):
-        return
-    messenger.answer_callback_query(callback_query_id=callback_id)
-    counters.answered_callbacks += 1
-
-
-def _parse_feedback_callback(
-    callback_query: dict[str, object],
-) -> tuple[str, DigestKind, FeedbackVote] | None:
-    data = callback_query.get("data")
-    if not isinstance(data, str):
-        return None
-    parts = data.split(":")
-    if len(parts) != 5 or parts[0] != "fb" or parts[1] != "v1":
-        return None
-    _, _, kind_str, message_key, vote_str = parts
-    try:
-        digest_kind = DigestKind(kind_str)
-    except ValueError:
-        return None
-    if not message_key or vote_str not in {"up", "down"}:
-        return None
-    vote: FeedbackVote = "up" if vote_str == "up" else "down"
-    return message_key, digest_kind, vote
 
 
 def _result_from_counters(*, counters: _PollCounters, fetched_updates: int) -> FeedbackPollResult:

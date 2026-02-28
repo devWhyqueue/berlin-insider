@@ -22,47 +22,46 @@ uv run berlin-insider fetch --source eventbrite_berlin_weekend
 uv run berlin-insider fetch --digest
 uv run berlin-insider fetch --digest --digest-kind daily
 uv run berlin-insider fetch --json --digest
-uv run berlin-insider schedule
-uv run berlin-insider schedule --force
-uv run berlin-insider schedule --json
-uv run berlin-insider feedback
+uv run berlin-insider worker --webhook-public-base-url https://example.com --telegram-webhook-secret my-secret
 ```
 
-## Scheduler
+## Worker Runtime
 
-`schedule` is a one-shot command meant to be called by an external scheduler.
-By default it runs daily tips on every day except Friday at 08:00 and weekend digests on Friday 08:00 in
-`Europe/Berlin`, and persists operational state in `.data/berlin_insider.db`.
-When a run executes, it also sends the digest through Telegram.
+`worker` is the primary runtime and stays alive as a background service.
+It runs cron-style digest jobs in-process and receives Telegram feedback through webhook callbacks.
+By default it runs daily tips on every day except Friday at 08:00 and weekend digests on Friday 08:00
+in `Europe/Berlin`, persisting state in `.data/berlin_insider.db`.
 
 Required environment variables:
 
 - `TELEGRAM_BOT_TOKEN`
 - `TELEGRAM_CHAT_ID`
+- `WEBHOOK_PUBLIC_BASE_URL` (for webhook registration, for example `https://bot.example.com`)
+- `TELEGRAM_WEBHOOK_SECRET`
 
 Optional:
 
 - `TELEGRAM_API_BASE` (default: `https://api.telegram.org`)
 - `OPENAI_API_KEY` (enables one-sentence `gpt-5-mini` summaries for parsed items/digests)
+- `WORKER_HOST` (default: `0.0.0.0`)
+- `WORKER_PORT` (default: `8080`)
+- `WORKER_TIMEZONE` (default: `Europe/Berlin`)
+- `WORKER_DAILY_HOUR` / `WORKER_DAILY_MINUTE`
+- `WORKER_WEEKEND_WEEKDAY` / `WORKER_WEEKEND_HOUR` / `WORKER_WEEKEND_MINUTE`
+- `WORKER_DB_PATH` (default: `.data/berlin_insider.db`)
+- `WORKER_TARGET_ITEMS` (default: `7`)
 
 When `OPENAI_API_KEY` is missing or summary generation fails for an item, the pipeline still runs
 and sends digests; that item is shown without a summary line.
 
-Example cron (Linux, host timezone set to Europe/Berlin):
-
-```cron
-0 8 * * 5 cd /path/to/berlin-insider && uv run berlin-insider schedule
-```
-
-Example Task Scheduler action (Windows):
+Run locally:
 
 ```powershell
-uv run berlin-insider schedule
+uv run berlin-insider worker --webhook-public-base-url https://example.com --telegram-webhook-secret my-secret
 ```
 
 ## Deploy on Ubuntu (systemd)
 
-The scheduler command is one-shot and should be triggered by a timer.
 This setup assumes the repo is cloned at `~/berlin-insider` and `.env` exists there.
 
 1. Install runtime dependencies:
@@ -82,85 +81,56 @@ uv sync --all-groups
 uv run playwright install --with-deps chromium
 ```
 
-3. Create systemd service (`/etc/systemd/system/berlin-insider-schedule.service`):
+3. Create systemd service (`/etc/systemd/system/berlin-insider-worker.service`):
 
 ```ini
 [Unit]
-Description=Berlin Insider scheduler one-shot
+Description=Berlin Insider worker
 After=network-online.target
 Wants=network-online.target
 
 [Service]
-Type=oneshot
+Type=simple
 User=<your-linux-username>
 WorkingDirectory=/home/<your-linux-username>/berlin-insider
-ExecStart=/home/<your-linux-username>/.local/bin/uv run berlin-insider schedule --timezone Europe/Berlin --db-path .data/berlin_insider.db
+ExecStart=/home/<your-linux-username>/.local/bin/uv run berlin-insider worker --timezone Europe/Berlin --db-path .data/berlin_insider.db
+Restart=always
+RestartSec=5
 ```
 
-4. Create systemd timer (`/etc/systemd/system/berlin-insider-schedule.timer`):
-
-```ini
-[Unit]
-Description=Run Berlin Insider scheduler every 15 minutes
-
-[Timer]
-OnBootSec=2m
-OnUnitActiveSec=15m
-Persistent=true
-
-[Install]
-WantedBy=timers.target
-```
-
-5. Enable timer:
+4. Enable service:
 
 ```bash
 sudo systemctl daemon-reload
-sudo systemctl enable --now berlin-insider-schedule.timer
+sudo systemctl enable --now berlin-insider-worker.service
 ```
 
-6. Verify:
+5. Verify:
 
 ```bash
-systemctl status berlin-insider-schedule.timer
-journalctl -u berlin-insider-schedule.service -n 100 --no-pager
+systemctl status berlin-insider-worker.service
+journalctl -u berlin-insider-worker.service -n 100 --no-pager
 ```
 
 ## Troubleshooting
 
-Check timer/service health:
+Check service health:
 
 ```bash
-systemctl list-timers --all | grep berlin-insider
-systemctl status berlin-insider-schedule.timer
-systemctl status berlin-insider-schedule.service
+systemctl status berlin-insider-worker.service
 ```
 
-Read recent scheduler logs:
+Read recent worker logs:
 
 ```bash
-journalctl -u berlin-insider-schedule.service -n 200 --no-pager
-journalctl -u berlin-insider-schedule.service -f
-```
-
-Run a manual non-forced diagnostic:
-
-```bash
-cd ~/berlin-insider
-~/.local/bin/uv run berlin-insider schedule --json
-```
-
-Run a forced send test:
-
-```bash
-cd ~/berlin-insider
-~/.local/bin/uv run berlin-insider schedule --force --json
+journalctl -u berlin-insider-worker.service -n 200 --no-pager
+journalctl -u berlin-insider-worker.service -f
 ```
 
 Inspect unit configuration:
 
 ```bash
-systemctl cat berlin-insider-schedule.service
+systemctl cat berlin-insider-worker.service
 ```
 
 Default schedule behavior:
@@ -188,10 +158,11 @@ RUN_LIVE_OPENAI_TESTS=1 ~/.local/bin/uv run pytest tests/test_parser_summarizer.
 
 3. If it still returns `401`, rotate the key in OpenAI dashboard and update `.env`.
 
-## Feedback polling
+## Feedback webhook
 
-`feedback` is a one-shot command that polls Telegram callback updates (`getUpdates`) and persists
-thumbs-up/down votes to `.data/berlin_insider.db` for ranking training data.
+The worker registers Telegram webhook delivery on startup and accepts callback updates at:
+
+`POST /telegram/webhook/{TELEGRAM_WEBHOOK_SECRET}`
 
 ## Persisted Data
 

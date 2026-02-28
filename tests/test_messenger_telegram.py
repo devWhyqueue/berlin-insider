@@ -94,3 +94,20 @@ def test_telegram_messenger_sends_feedback_buttons(monkeypatch) -> None:
     keyboard = markup["inline_keyboard"]
     assert keyboard[0][0]["callback_data"] == "fb:v1:daily:daily-2026-02-23-abcdef:up"
     assert keyboard[0][1]["callback_data"] == "fb:v1:daily:daily-2026-02-23-abcdef:down"
+
+
+def test_telegram_messenger_registers_webhook(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    def _fake_post(url, *, json, timeout):  # noqa: ANN001, ANN202
+        captured["url"] = url
+        captured["json"] = json
+        return httpx.Response(status_code=200, json={"ok": True, "result": True})
+
+    monkeypatch.setattr("berlin_insider.messenger.telegram.httpx.post", _fake_post)
+    messenger = TelegramMessenger(bot_token="token", chat_id="-10001")
+
+    messenger.set_webhook(url="https://example.com/telegram/webhook/secret")
+
+    assert captured["url"] == "https://api.telegram.org/bottoken/setWebhook"
+    assert captured["json"] == {"url": "https://example.com/telegram/webhook/secret"}
