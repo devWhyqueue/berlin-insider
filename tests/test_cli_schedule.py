@@ -13,6 +13,7 @@ def _result(*, executed: bool, forced: bool, due: bool, status: SchedulerStatus)
         reason="ok",
         status=status,
         exit_code=0,
+        delivered=executed,
         digest="Berlin Insider",
         state=SchedulerState(
             last_attempt_at=datetime(2026, 2, 27, 7, 0, tzinfo=UTC).isoformat(),
@@ -24,6 +25,9 @@ def _result(*, executed: bool, forced: bool, due: bool, status: SchedulerStatus)
             last_curated_count=7,
             last_failed_sources=[],
             last_source_status={},
+            last_delivery_at=datetime(2026, 2, 27, 7, 1, tzinfo=UTC).isoformat(),
+            last_delivery_message_id="42",
+            last_delivery_error=None,
         ),
         local_date="2026-02-27",
     )
@@ -79,9 +83,9 @@ def test_cli_schedule_json_schema(monkeypatch, caplog) -> None:
         "reason",
         "status",
         "exit_code",
+        "delivered",
         "digest",
         "state",
         "local_date",
     }
     assert payload["status"] == "success"
-

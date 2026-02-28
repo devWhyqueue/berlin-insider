@@ -31,6 +31,16 @@ uv run berlin-insider schedule --json
 `schedule` is a one-shot command meant to be called by an external scheduler.
 By default it runs only on Friday 08:00 in `Europe/Berlin` and writes run state to
 `.data/scheduler_state.json`.
+When a run executes, it also sends the digest through Telegram.
+
+Required environment variables:
+
+- `TELEGRAM_BOT_TOKEN`
+- `TELEGRAM_CHAT_ID`
+
+Optional:
+
+- `TELEGRAM_API_BASE` (default: `https://api.telegram.org`)
 
 Example cron (Linux, host timezone set to Europe/Berlin):
 

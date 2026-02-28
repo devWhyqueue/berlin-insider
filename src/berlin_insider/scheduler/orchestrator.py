@@ -2,9 +2,11 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from pathlib import Path
-from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
+from berlin_insider.messenger.models import DeliveryResult, Messenger, MessengerError
+from berlin_insider.messenger.telegram import TelegramMessenger
 from berlin_insider.pipeline import FullPipelineRunResult, build_fetch_context, run_full_pipeline
+from berlin_insider.scheduler.due import is_due
 from berlin_insider.scheduler.models import (
     ScheduleConfig,
     SchedulerState,
@@ -12,37 +14,6 @@ from berlin_insider.scheduler.models import (
     ScheduleRunResult,
 )
 from berlin_insider.scheduler.store import JsonSchedulerStateStore
-
-_WEEKDAY_TO_INDEX = {
-    "monday": 0,
-    "tuesday": 1,
-    "wednesday": 2,
-    "thursday": 3,
-    "friday": 4,
-    "saturday": 5,
-    "sunday": 6,
-}
-
-
-def is_due(
-    *,
-    now_utc: datetime,
-    config: ScheduleConfig,
-    state: SchedulerState,
-) -> tuple[bool, str, str]:
-    """Return due decision, reason, and local schedule date string."""
-    local_now = _local_now(now_utc, timezone_name=config.timezone)
-    local_date = local_now.date().isoformat()
-    expected_weekday = _WEEKDAY_TO_INDEX.get(config.weekday.lower())
-    if expected_weekday is None:
-        return False, f"invalid weekday '{config.weekday}'", local_date
-    if local_now.weekday() != expected_weekday:
-        return False, "today is not the configured weekday", local_date
-    if (local_now.hour, local_now.minute) < (config.hour, config.minute):
-        return False, "configured send time has not been reached yet", local_date
-    if state.last_run_date_local == local_date:
-        return False, "already ran for this local date", local_date
-    return True, "run is due", local_date
 
 
 class Scheduler:
@@ -55,6 +26,7 @@ class Scheduler:
         target_items: int,
         force: bool,
         now_utc: datetime | None = None,
+        messenger: Messenger | None = None,
     ) -> ScheduleRunResult:
         """Run one scheduler cycle with due-check, state write, and pipeline execution."""
         reference_now = now_utc or datetime.now(UTC)
@@ -71,15 +43,8 @@ class Scheduler:
             reference_now=reference_now,
             sent_store_path=sent_store_path,
             target_items=target_items,
+            messenger=messenger,
         )
-
-
-def _local_now(now_utc: datetime, *, timezone_name: str) -> datetime:
-    try:
-        tz = ZoneInfo(timezone_name)
-    except ZoneInfoNotFoundError:
-        tz = UTC
-    return now_utc.astimezone(tz)
 
 
 def _load_and_mark_attempt(
@@ -106,6 +71,7 @@ def _build_skip_result(
         reason=reason,
         status=SchedulerStatus.SKIPPED,
         exit_code=0,
+        delivered=False,
         digest=None,
         state=state,
         local_date=local_date,
@@ -122,6 +88,7 @@ def _execute_due_run(
     reference_now: datetime,
     sent_store_path: Path,
     target_items: int,
+    messenger: Messenger | None,
 ) -> ScheduleRunResult:
     try:
         pipeline_result = run_full_pipeline(
@@ -133,6 +100,19 @@ def _execute_due_run(
         return _build_error_result(
             state_store, state, force=force, due=due, local_date=local_date, exc=exc
         )
+    messenger_instance = messenger or TelegramMessenger.from_env()
+    try:
+        delivery_result = messenger_instance.send_digest(text=pipeline_result.digest)
+    except MessengerError as exc:
+        return _build_delivery_error_result(
+            state_store=state_store,
+            state=state,
+            force=force,
+            due=due,
+            local_date=local_date,
+            pipeline_result=pipeline_result,
+            exc=exc,
+        )
     return _build_success_result(
         state_store=state_store,
         state=state,
@@ -141,6 +121,7 @@ def _execute_due_run(
         local_date=local_date,
         reference_now=reference_now,
         pipeline_result=pipeline_result,
+        delivery_result=delivery_result,
     )
 
 
@@ -163,7 +144,37 @@ def _build_error_result(
         reason="run failed",
         status=SchedulerStatus.ERROR,
         exit_code=1,
+        delivered=False,
         digest=None,
+        state=state,
+        local_date=local_date,
+    )
+
+
+def _build_delivery_error_result(
+    *,
+    state_store: JsonSchedulerStateStore,
+    state: SchedulerState,
+    force: bool,
+    due: bool,
+    local_date: str,
+    pipeline_result: FullPipelineRunResult,
+    exc: MessengerError,
+) -> ScheduleRunResult:
+    _apply_pipeline_state(state, pipeline_result=pipeline_result)
+    state.last_status = SchedulerStatus.ERROR
+    state.last_error_message = f"delivery failed: {exc}"
+    state.last_delivery_error = str(exc)
+    state_store.save(state)
+    return ScheduleRunResult(
+        executed=True,
+        forced=force,
+        due=due,
+        reason="delivery failed",
+        status=SchedulerStatus.ERROR,
+        exit_code=1,
+        delivered=False,
+        digest=pipeline_result.digest,
         state=state,
         local_date=local_date,
     )
@@ -178,6 +189,7 @@ def _build_success_result(
     local_date: str,
     reference_now: datetime,
     pipeline_result: FullPipelineRunResult,
+    delivery_result: DeliveryResult,
 ) -> ScheduleRunResult:
     has_failures = bool(
         pipeline_result.fetch_result.failed_sources
@@ -185,10 +197,30 @@ def _build_success_result(
         or pipeline_result.curate_result.failed_sources
     )
     status = SchedulerStatus.PARTIAL if has_failures else SchedulerStatus.SUCCESS
+    _apply_pipeline_state(state, pipeline_result=pipeline_result)
     state.last_status = status
     state.last_run_date_local = local_date
     state.last_success_at = reference_now.isoformat()
     state.last_error_message = None
+    state.last_delivery_at = delivery_result.delivered_at.isoformat()
+    state.last_delivery_message_id = delivery_result.external_message_id
+    state.last_delivery_error = delivery_result.warning_message
+    state_store.save(state)
+    return ScheduleRunResult(
+        executed=True,
+        forced=force,
+        due=due,
+        reason="run executed",
+        status=status,
+        exit_code=0,
+        delivered=True,
+        digest=pipeline_result.digest,
+        state=state,
+        local_date=local_date,
+    )
+
+
+def _apply_pipeline_state(state: SchedulerState, *, pipeline_result: FullPipelineRunResult) -> None:
     state.last_digest_length = len(pipeline_result.digest)
     state.last_curated_count = pipeline_result.curate_result.actual_count
     state.last_failed_sources = sorted(
@@ -205,15 +237,3 @@ def _build_success_result(
         result.source_id.value: result.status.value
         for result in pipeline_result.fetch_result.results
     }
-    state_store.save(state)
-    return ScheduleRunResult(
-        executed=True,
-        forced=force,
-        due=due,
-        reason="run executed",
-        status=status,
-        exit_code=0,
-        digest=pipeline_result.digest,
-        state=state,
-        local_date=local_date,
-    )

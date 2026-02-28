@@ -77,4 +77,7 @@ def _state_from_payload(payload: dict[str, object]) -> SchedulerState:
         last_curated_count=_opt_int(payload.get("last_curated_count")),
         last_failed_sources=_str_list(payload.get("last_failed_sources")),
         last_source_status=_str_map(payload.get("last_source_status")),
+        last_delivery_at=_opt_str(payload.get("last_delivery_at")),
+        last_delivery_message_id=_opt_str(payload.get("last_delivery_message_id")),
+        last_delivery_error=_opt_str(payload.get("last_delivery_error")),
     )

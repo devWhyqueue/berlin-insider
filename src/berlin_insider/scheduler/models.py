@@ -30,6 +30,9 @@ class SchedulerState:
     last_curated_count: int | None = None
     last_failed_sources: list[str] = field(default_factory=list)
     last_source_status: dict[str, str] = field(default_factory=dict)
+    last_delivery_at: str | None = None
+    last_delivery_message_id: str | None = None
+    last_delivery_error: str | None = None
 
 
 @dataclass(slots=True)
@@ -40,6 +43,7 @@ class ScheduleRunResult:
     reason: str
     status: SchedulerStatus
     exit_code: int
+    delivered: bool
     digest: str | None
     state: SchedulerState
     local_date: str

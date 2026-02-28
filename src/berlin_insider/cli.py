@@ -22,7 +22,8 @@ from berlin_insider.formatter import render_telegram_digest
 from berlin_insider.parser.models import ParseRunResult
 from berlin_insider.parser.orchestrator import Parser
 from berlin_insider.pipeline import DEFAULT_USER_AGENT
-from berlin_insider.scheduler.models import ScheduleConfig, SchedulerStatus, ScheduleRunResult
+from berlin_insider.scheduler.cli_log import log_schedule_result
+from berlin_insider.scheduler.models import ScheduleConfig
 from berlin_insider.scheduler.orchestrator import Scheduler
 from berlin_insider.scheduler.store import JsonSchedulerStateStore
 
@@ -87,7 +88,7 @@ def _run_schedule_command(args: argparse.Namespace) -> int:
         target_items=args.target_items,
         force=args.force,
     )
-    _log_schedule_result(result, json_output=args.json)
+    log_schedule_result(logger, result, json_output=args.json)
     return result.exit_code
 
 
@@ -98,35 +99,6 @@ def _fetch_context(args: argparse.Namespace) -> FetchContext:
         max_items_per_source=args.max_items_per_source,
         collected_at=datetime.now(UTC),
     )
-
-
-def _log_schedule_result(result: ScheduleRunResult, *, json_output: bool) -> None:
-    if json_output:
-        logger.info(json.dumps(asdict(result), default=str, ensure_ascii=False, indent=2))
-        return
-    logger.info(
-        "Schedule run: status=%s | executed=%s | due=%s | forced=%s | local_date=%s | reason=%s",
-        result.status.value,
-        result.executed,
-        result.due,
-        result.forced,
-        result.local_date,
-        result.reason,
-    )
-    state = result.state
-    logger.info(
-        "Scheduler state: status=%s | attempt=%s | success=%s | error=%s | digest_len=%s | curated=%s | source_statuses=%s | failed_sources=%s",
-        state.last_status.value if isinstance(state.last_status, SchedulerStatus) else "n/a",
-        state.last_attempt_at or "n/a",
-        state.last_success_at or "n/a",
-        state.last_error_message or "none",
-        state.last_digest_length if state.last_digest_length is not None else "n/a",
-        state.last_curated_count if state.last_curated_count is not None else "n/a",
-        len(state.last_source_status),
-        ", ".join(state.last_failed_sources) if state.last_failed_sources else "none",
-    )
-    if result.digest:
-        logger.info(result.digest)
 
 
 def _log_fetch_only(fetch_result: FetchRunResult, *, json_output: bool) -> None:
