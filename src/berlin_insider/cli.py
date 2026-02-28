@@ -21,6 +21,10 @@ from berlin_insider.fetcher.orchestrator import Fetcher
 from berlin_insider.formatter import render_telegram_digest
 from berlin_insider.parser.models import ParseRunResult
 from berlin_insider.parser.orchestrator import Parser
+from berlin_insider.pipeline import DEFAULT_USER_AGENT
+from berlin_insider.scheduler.models import ScheduleConfig, SchedulerStatus, ScheduleRunResult
+from berlin_insider.scheduler.orchestrator import Scheduler
+from berlin_insider.scheduler.store import JsonSchedulerStateStore
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO, format="%(message)s")
@@ -30,10 +34,15 @@ def main() -> None:
     """Run the command-line interface."""
     parser = _build_parser()
     args = parser.parse_args()
-    if args.command != "fetch":
-        parser.print_help()
+    if args.command == "fetch":
+        _run_fetch_command(args)
         return
-    _run_fetch_command(args)
+    if args.command == "schedule":
+        exit_code = _run_schedule_command(args)
+        if exit_code != 0:
+            raise SystemExit(exit_code)
+        return
+    parser.print_help()
 
 
 def _run_fetch_command(args: argparse.Namespace) -> None:
@@ -65,6 +74,23 @@ def _run_fetch_command(args: argparse.Namespace) -> None:
     )
 
 
+def _run_schedule_command(args: argparse.Namespace) -> int:
+    result = Scheduler().run_once(
+        state_store=JsonSchedulerStateStore(Path(args.state_path)),
+        config=ScheduleConfig(
+            timezone=args.timezone,
+            weekday=args.weekday,
+            hour=args.hour,
+            minute=args.minute,
+        ),
+        sent_store_path=Path(args.sent_store_path),
+        target_items=args.target_items,
+        force=args.force,
+    )
+    _log_schedule_result(result, json_output=args.json)
+    return result.exit_code
+
+
 def _fetch_context(args: argparse.Namespace) -> FetchContext:
     return FetchContext(
         user_agent=args.user_agent,
@@ -72,6 +98,35 @@ def _fetch_context(args: argparse.Namespace) -> FetchContext:
         max_items_per_source=args.max_items_per_source,
         collected_at=datetime.now(UTC),
     )
+
+
+def _log_schedule_result(result: ScheduleRunResult, *, json_output: bool) -> None:
+    if json_output:
+        logger.info(json.dumps(asdict(result), default=str, ensure_ascii=False, indent=2))
+        return
+    logger.info(
+        "Schedule run: status=%s | executed=%s | due=%s | forced=%s | local_date=%s | reason=%s",
+        result.status.value,
+        result.executed,
+        result.due,
+        result.forced,
+        result.local_date,
+        result.reason,
+    )
+    state = result.state
+    logger.info(
+        "Scheduler state: status=%s | attempt=%s | success=%s | error=%s | digest_len=%s | curated=%s | source_statuses=%s | failed_sources=%s",
+        state.last_status.value if isinstance(state.last_status, SchedulerStatus) else "n/a",
+        state.last_attempt_at or "n/a",
+        state.last_success_at or "n/a",
+        state.last_error_message or "none",
+        state.last_digest_length if state.last_digest_length is not None else "n/a",
+        state.last_curated_count if state.last_curated_count is not None else "n/a",
+        len(state.last_source_status),
+        ", ".join(state.last_failed_sources) if state.last_failed_sources else "none",
+    )
+    if result.digest:
+        logger.info(result.digest)
 
 
 def _log_fetch_only(fetch_result: FetchRunResult, *, json_output: bool) -> None:
@@ -152,21 +207,43 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     fetch.add_argument(
         "--user-agent",
-        default=(
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-            "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
-        ),
+        default=DEFAULT_USER_AGENT,
         help="HTTP user-agent string used for requests",
     )
-    fetch.add_argument(
-        "--target-items",
-        type=int,
-        default=7,
-        help="Target number of curated items",
-    )
+    fetch.add_argument("--target-items", type=int, default=7, help="Target number of curated items")
     fetch.add_argument(
         "--sent-store-path",
         default=".data/sent_links.json",
         help="Path to sent-links JSON store for curation dedupe",
+    )
+    schedule = sub.add_parser("schedule", help="Run scheduler once (for cron/task scheduler)")
+    schedule.add_argument("--json", action="store_true", help="Print full JSON output")
+    schedule.add_argument(
+        "--timezone", default="Europe/Berlin", help="IANA timezone used for due checks"
+    )
+    schedule.add_argument(
+        "--weekday",
+        default="friday",
+        help="Lowercase weekday name for scheduled run (for example: friday)",
+    )
+    schedule.add_argument("--hour", type=int, default=8, help="Scheduled hour in local timezone")
+    schedule.add_argument(
+        "--minute", type=int, default=0, help="Scheduled minute in local timezone"
+    )
+    schedule.add_argument(
+        "--state-path",
+        default=".data/scheduler_state.json",
+        help="Path to scheduler state JSON file",
+    )
+    schedule.add_argument(
+        "--sent-store-path",
+        default=".data/sent_links.json",
+        help="Path to sent-links JSON store for curation dedupe",
+    )
+    schedule.add_argument(
+        "--target-items", type=int, default=7, help="Target number of curated items"
+    )
+    schedule.add_argument(
+        "--force", action="store_true", help="Bypass due check and run immediately"
     )
     return parser
