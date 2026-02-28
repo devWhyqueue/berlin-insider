@@ -1,6 +1,7 @@
 from datetime import UTC, datetime
 
 from berlin_insider.curator.models import CuratedItem, CurateRunResult
+from berlin_insider.digest import DigestKind
 from berlin_insider.fetcher.models import SourceId
 from berlin_insider.formatter import DigestFormatConfig, render_telegram_digest
 from berlin_insider.parser.models import ParsedCategory, ParsedItem, WeekendRelevance
@@ -134,3 +135,23 @@ def test_formatter_handles_empty_selection() -> None:
         config=DigestFormatConfig(timezone="UTC"),
     )
     assert "No strong picks found this weekend" in text
+
+
+def test_formatter_renders_daily_tip() -> None:
+    item = CuratedItem(
+        item=_parsed_item(
+            title="Daily Pick",
+            url="https://example.com/daily",
+            category=ParsedCategory.EVENT,
+            start_at=datetime(2026, 2, 23, 18, 0, tzinfo=UTC),
+        ),
+        score=0.9,
+    )
+    text = render_telegram_digest(
+        _curate_result([item]),
+        reference_now=datetime(2026, 2, 23, 8, 0, tzinfo=UTC),
+        digest_kind=DigestKind.DAILY,
+        config=DigestFormatConfig(timezone="UTC"),
+    )
+    assert "Tip of the Day" in text
+    assert "Daily Pick" in text

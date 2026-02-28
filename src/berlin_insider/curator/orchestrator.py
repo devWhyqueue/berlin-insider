@@ -1,30 +1,30 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from datetime import datetime
+from datetime import UTC, datetime
 
 from berlin_insider.curator.config import CuratorConfig
 from berlin_insider.curator.helpers import (
+    BERLIN_TZ,
     Candidate,
     backfill,
-    build_source_results,
+    build_run_result,
     candidate_sort_key,
-    category_counts,
     event_in_window,
+    nearest_upcoming_for_local_date,
     normalize_title,
     pick_category_targets,
     title_duplicate,
-    to_curated,
     weekend_window,
 )
 from berlin_insider.curator.models import (
     CurateRunResult,
-    CurateStatus,
     DroppedItem,
     DropReason,
 )
 from berlin_insider.curator.scoring import score_item
 from berlin_insider.curator.store import SentItemStore, canonicalize_url
+from berlin_insider.digest import DigestKind
 from berlin_insider.parser.models import ParsedItem, ParseRunResult, WeekendRelevance
 
 
@@ -49,10 +49,10 @@ class Curator:
             store=store,
         )
         kept = self._dedupe(candidates, cfg, source_drops)
-        selected, fallback_warning = self._select(kept, cfg)
+        selected, fallback_warning = self._select(kept, cfg, reference_now=reference_now)
         self._record_non_selected(kept, selected, source_drops)
         store.mark_sent([candidate.canonical_url for candidate in selected])
-        return _build_run_result(
+        return build_run_result(
             parse_result=parse_result,
             source_drops=source_drops,
             selected=selected,
@@ -60,6 +60,7 @@ class Curator:
             weekend_end=weekend_end,
             fallback_warning=fallback_warning,
             target_count=cfg.target_count,
+            digest_kind=cfg.digest_kind,
         )
 
     def _collect_candidates(
@@ -145,8 +146,10 @@ class Curator:
         return kept
 
     def _select(
-        self, kept: list[Candidate], cfg: CuratorConfig
+        self, kept: list[Candidate], cfg: CuratorConfig, *, reference_now: datetime
     ) -> tuple[list[Candidate], str | None]:
+        if cfg.digest_kind == DigestKind.DAILY:
+            return self._select_daily(kept, reference_now=reference_now)
         pool = sorted(kept, key=candidate_sort_key)
         primary = [candidate for candidate in pool if candidate.tier in {0, 1}]
         unknown = [candidate for candidate in pool if candidate.tier == 2]
@@ -157,6 +160,21 @@ class Curator:
         selected, _ = backfill(unknown, selected, selected_ids, cfg.target_count)
         warning = f"Fallback selection active: only {len(selected)} items available after filtering"
         return selected[: cfg.target_count], warning
+
+    def _select_daily(
+        self, kept: list[Candidate], *, reference_now: datetime
+    ) -> tuple[list[Candidate], str | None]:
+        if not kept:
+            return [], "Fallback selection active: no candidates available for daily tip"
+        pool = sorted(kept, key=candidate_sort_key)
+        aware_now = reference_now if reference_now.tzinfo else reference_now.replace(tzinfo=UTC)
+        local_date = aware_now.astimezone(BERLIN_TZ).date()
+        same_day, upcoming = nearest_upcoming_for_local_date(pool, local_date=local_date)
+        if same_day:
+            return [same_day[0]], None
+        if upcoming:
+            return [upcoming[0]], "Fallback selection active: no same-day items available"
+        return [pool[0]], "Fallback selection active: using best available item"
 
     def _record_non_selected(
         self,
@@ -193,35 +211,3 @@ def _tier_for_item(item: ParsedItem, in_window: bool) -> int:
     if in_window or item.weekend_relevance == WeekendRelevance.LIKELY_THIS_WEEKEND:
         return 0
     return 1
-
-
-def _build_run_result(
-    *,
-    parse_result: ParseRunResult,
-    source_drops: dict[int, list[DroppedItem]],
-    selected: list[Candidate],
-    weekend_start: datetime,
-    weekend_end: datetime,
-    fallback_warning: str | None,
-    target_count: int,
-) -> CurateRunResult:
-    source_results = build_source_results(parse_result, source_drops, selected)
-    warnings = [f"Weekend window: {weekend_start.isoformat()} to {weekend_end.isoformat()}"]
-    if fallback_warning:
-        warnings.append(fallback_warning)
-    failed_sources = [
-        result.source_id for result in source_results if result.status == CurateStatus.ERROR
-    ]
-    dropped_count = sum(len(result.dropped_items) for result in source_results)
-    return CurateRunResult(
-        started_at=parse_result.started_at,
-        finished_at=parse_result.finished_at,
-        results=source_results,
-        selected_items=[to_curated(candidate) for candidate in selected],
-        dropped_count=dropped_count,
-        failed_sources=failed_sources,
-        target_count=target_count,
-        actual_count=len(selected),
-        category_counts=category_counts(selected),
-        warnings=warnings,
-    )

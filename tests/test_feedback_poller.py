@@ -1,0 +1,93 @@
+from __future__ import annotations
+
+from pathlib import Path
+
+from berlin_insider.digest import DigestKind
+from berlin_insider.feedback.store import (
+    JsonFeedbackStore,
+    JsonSentMessageStore,
+    JsonTelegramUpdatesStateStore,
+)
+from berlin_insider.feedback.telegram_poller import poll_feedback_once
+from berlin_insider.feedback.models import SentMessageRecord
+
+
+class _FakeMessenger:
+    def __init__(self, updates: list[dict[str, object]]) -> None:
+        self._updates = updates
+        self.answered: list[str] = []
+
+    def get_updates(self, *, offset: int | None = None, timeout_seconds: int = 0) -> list[dict[str, object]]:  # noqa: ARG002
+        return self._updates
+
+    def answer_callback_query(self, *, callback_query_id: str) -> None:
+        self.answered.append(callback_query_id)
+
+
+def test_feedback_poller_persists_and_deduplicates_votes(tmp_path: Path) -> None:
+    sent_store = JsonSentMessageStore(tmp_path / "sent_messages.json")
+    sent_store.upsert(
+        SentMessageRecord(
+            message_key="daily-2026-02-23-abc",
+            digest_kind=DigestKind.DAILY,
+            local_date="2026-02-23",
+            sent_at="2026-02-23T08:00:00+00:00",
+            telegram_message_id="42",
+            selected_urls=["https://example.com/a"],
+        )
+    )
+    updates = [
+        {
+            "update_id": 100,
+            "callback_query": {
+                "id": "cb1",
+                "data": "fb:v1:daily:daily-2026-02-23-abc:up",
+                "from": {"id": 1},
+                "message": {"message_id": 42, "chat": {"id": -1000}},
+            },
+        },
+        {
+            "update_id": 101,
+            "callback_query": {
+                "id": "cb2",
+                "data": "fb:v1:daily:daily-2026-02-23-abc:down",
+                "from": {"id": 1},
+                "message": {"message_id": 42, "chat": {"id": -1000}},
+            },
+        },
+    ]
+    messenger = _FakeMessenger(updates)
+    feedback_store = JsonFeedbackStore(tmp_path / "feedback_events.json")
+    state_store = JsonTelegramUpdatesStateStore(tmp_path / "updates_state.json")
+    result = poll_feedback_once(
+        messenger=messenger,
+        state_store=state_store,
+        feedback_store=feedback_store,
+        sent_message_store=sent_store,
+    )
+    assert result.fetched_updates == 2
+    assert result.persisted_votes == 2
+    assert result.answered_callbacks == 2
+    assert feedback_store.count() == 1
+    assert state_store.load().last_update_id == 101
+
+
+def test_feedback_poller_ignores_non_feedback_callbacks(tmp_path: Path) -> None:
+    sent_store = JsonSentMessageStore(tmp_path / "sent_messages.json")
+    messenger = _FakeMessenger(
+        [
+            {"update_id": 1, "message": {"text": "hello"}},
+            {"update_id": 2, "callback_query": {"id": "cb-x", "data": "foo:bar"}},
+        ]
+    )
+    feedback_store = JsonFeedbackStore(tmp_path / "feedback_events.json")
+    state_store = JsonTelegramUpdatesStateStore(tmp_path / "updates_state.json")
+    result = poll_feedback_once(
+        messenger=messenger,
+        state_store=state_store,
+        feedback_store=feedback_store,
+        sent_message_store=sent_store,
+    )
+    assert result.persisted_votes == 0
+    assert result.ignored_updates >= 1
+    assert state_store.load().last_update_id == 2

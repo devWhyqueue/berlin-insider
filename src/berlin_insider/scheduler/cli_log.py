@@ -31,6 +31,12 @@ def _log_schedule_overview(logger: logging.Logger, result: ScheduleRunResult) ->
         result.local_date,
         result.reason,
     )
+    if result.digest_kind is not None:
+        logger.info(
+            "Digest kind: %s | message_key=%s",
+            result.digest_kind.value,
+            result.message_key or "n/a",
+        )
 
 
 def _log_state_summary(logger: logging.Logger, result: ScheduleRunResult) -> None:

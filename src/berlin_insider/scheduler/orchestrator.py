@@ -3,15 +3,21 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from pathlib import Path
 
-from berlin_insider.messenger.models import DeliveryResult, Messenger, MessengerError
+from berlin_insider.digest import DigestKind
+from berlin_insider.feedback.models import SentMessageRecord
+from berlin_insider.feedback.store import JsonSentMessageStore
+from berlin_insider.messenger.models import FeedbackMetadata, Messenger, MessengerError
 from berlin_insider.messenger.telegram import TelegramMessenger
-from berlin_insider.pipeline import FullPipelineRunResult, build_fetch_context, run_full_pipeline
-from berlin_insider.scheduler.due import is_due
-from berlin_insider.scheduler.models import (
-    ScheduleConfig,
-    SchedulerState,
-    SchedulerStatus,
-    ScheduleRunResult,
+from berlin_insider.pipeline import build_fetch_context, run_full_pipeline
+from berlin_insider.scheduler.due import expected_digest_kind, is_due
+from berlin_insider.scheduler.models import ScheduleConfig, SchedulerState, ScheduleRunResult
+from berlin_insider.scheduler.result_builders import (
+    build_delivery_error_result,
+    build_error_result,
+    build_message_key,
+    build_skip_result,
+    build_success_result,
+    sent_store_path_for_kind,
 )
 from berlin_insider.scheduler.store import JsonSchedulerStateStore
 
@@ -27,61 +33,130 @@ class Scheduler:
         force: bool,
         now_utc: datetime | None = None,
         messenger: Messenger | None = None,
+        sent_message_store: JsonSentMessageStore | None = None,
     ) -> ScheduleRunResult:
         """Run one scheduler cycle with due-check, state write, and pipeline execution."""
         reference_now = now_utc or datetime.now(UTC)
-        state = _load_and_mark_attempt(state_store, reference_now)
-        due, reason, local_date = is_due(now_utc=reference_now, config=config, state=state)
-        if not force and not due:
-            return _build_skip_result(state_store, state, reason=reason, local_date=local_date)
-        return _execute_due_run(
+        state = _load_and_mark_attempt(state_store=state_store, reference_now=reference_now)
+        return _run_once_cycle(
             state_store=state_store,
-            state=state,
-            local_date=local_date,
-            due=due,
-            force=force,
-            reference_now=reference_now,
+            config=config,
             sent_store_path=sent_store_path,
             target_items=target_items,
+            force=force,
+            reference_now=reference_now,
+            state=state,
             messenger=messenger,
+            sent_message_store=sent_message_store,
         )
 
 
+def _run_once_cycle(
+    *,
+    state_store: JsonSchedulerStateStore,
+    config: ScheduleConfig,
+    sent_store_path: Path,
+    target_items: int,
+    force: bool,
+    reference_now: datetime,
+    state: SchedulerState,
+    messenger: Messenger | None,
+    sent_message_store: JsonSentMessageStore | None,
+) -> ScheduleRunResult:
+    due_state = _resolve_due_state(
+        now_utc=reference_now, config=config, state_store=state_store, state=state, force=force
+    )
+    if due_state.skip_result is not None:
+        return due_state.skip_result
+    if due_state.digest_kind is None:
+        return build_skip_result(
+            state_store=state_store,
+            state=state,
+            force=force,
+            reason="no digest kind scheduled for this local date",
+            local_date=due_state.local_date,
+            digest_kind=None,
+        )
+    return _execute_due_run(
+        state_store=state_store,
+        state=state,
+        digest_kind=due_state.digest_kind,
+        local_date=due_state.local_date,
+        due=due_state.due,
+        force=force,
+        reference_now=reference_now,
+        sent_store_path=sent_store_path,
+        target_items=target_items,
+        messenger=messenger,
+        sent_message_store=sent_message_store,
+    )
+
+
+class _DueState:
+    def __init__(
+        self,
+        *,
+        due: bool,
+        local_date: str,
+        digest_kind: DigestKind | None,
+        skip_result: ScheduleRunResult | None,
+    ) -> None:
+        self.due = due
+        self.local_date = local_date
+        self.digest_kind = digest_kind
+        self.skip_result = skip_result
+
+
+def _resolve_due_state(
+    *,
+    now_utc: datetime,
+    config: ScheduleConfig,
+    state_store: JsonSchedulerStateStore,
+    state: SchedulerState,
+    force: bool,
+) -> _DueState:
+    due, reason, local_date, digest_kind = is_due(now_utc=now_utc, config=config, state=state)
+    if force:
+        resolved_kind = digest_kind or expected_digest_kind(now_utc=now_utc, config=config)
+        if resolved_kind is not None:
+            return _DueState(
+                due=due, local_date=local_date, digest_kind=resolved_kind, skip_result=None
+            )
+        skip = build_skip_result(
+            state_store=state_store,
+            state=state,
+            force=True,
+            reason="no digest kind scheduled for this local date",
+            local_date=local_date,
+            digest_kind=None,
+        )
+        return _DueState(due=False, local_date=local_date, digest_kind=None, skip_result=skip)
+    if due and digest_kind is not None:
+        return _DueState(due=True, local_date=local_date, digest_kind=digest_kind, skip_result=None)
+    skip = build_skip_result(
+        state_store=state_store,
+        state=state,
+        force=False,
+        reason=reason,
+        local_date=local_date,
+        digest_kind=digest_kind,
+    )
+    return _DueState(due=False, local_date=local_date, digest_kind=digest_kind, skip_result=skip)
+
+
 def _load_and_mark_attempt(
-    state_store: JsonSchedulerStateStore, reference_now: datetime
+    *, state_store: JsonSchedulerStateStore, reference_now: datetime
 ) -> SchedulerState:
     state = state_store.load()
     state.last_attempt_at = reference_now.isoformat()
     return state
 
 
-def _build_skip_result(
-    state_store: JsonSchedulerStateStore,
-    state: SchedulerState,
-    *,
-    reason: str,
-    local_date: str,
-) -> ScheduleRunResult:
-    state.last_status = SchedulerStatus.SKIPPED
-    state_store.save(state)
-    return ScheduleRunResult(
-        executed=False,
-        forced=False,
-        due=False,
-        reason=reason,
-        status=SchedulerStatus.SKIPPED,
-        exit_code=0,
-        delivered=False,
-        digest=None,
-        state=state,
-        local_date=local_date,
-    )
-
-
 def _execute_due_run(
     *,
     state_store: JsonSchedulerStateStore,
     state: SchedulerState,
+    digest_kind: DigestKind,
     local_date: str,
     due: bool,
     force: bool,
@@ -89,151 +164,83 @@ def _execute_due_run(
     sent_store_path: Path,
     target_items: int,
     messenger: Messenger | None,
+    sent_message_store: JsonSentMessageStore | None,
 ) -> ScheduleRunResult:
     try:
         pipeline_result = run_full_pipeline(
             context=build_fetch_context(collected_at=reference_now),
-            sent_store_path=sent_store_path,
+            sent_store_path=sent_store_path_for_kind(sent_store_path, digest_kind=digest_kind),
             target_items=target_items,
+            digest_kind=digest_kind,
         )
     except Exception as exc:  # noqa: BLE001
-        return _build_error_result(
-            state_store, state, force=force, due=due, local_date=local_date, exc=exc
-        )
-    messenger_instance = messenger or TelegramMessenger.from_env()
-    try:
-        delivery_result = messenger_instance.send_digest(text=pipeline_result.digest)
-    except MessengerError as exc:
-        return _build_delivery_error_result(
+        return build_error_result(
             state_store=state_store,
             state=state,
             force=force,
             due=due,
             local_date=local_date,
+            digest_kind=digest_kind,
+            exc=exc,
+        )
+    message_key = build_message_key(digest_kind=digest_kind, local_date=local_date)
+    messenger_instance = messenger or TelegramMessenger.from_env()
+    try:
+        delivery = messenger_instance.send_digest(
+            text=pipeline_result.digest,
+            feedback_metadata=FeedbackMetadata(digest_kind=digest_kind, message_key=message_key),
+        )
+    except MessengerError as exc:
+        return build_delivery_error_result(
+            state_store=state_store,
+            state=state,
+            force=force,
+            due=due,
+            local_date=local_date,
+            digest_kind=digest_kind,
             pipeline_result=pipeline_result,
             exc=exc,
         )
-    return _build_success_result(
+    _persist_sent_message(
+        store=sent_message_store or JsonSentMessageStore(Path(".data/sent_messages.json")),
+        message_key=message_key,
+        digest_kind=digest_kind,
+        local_date=local_date,
+        delivered_at=delivery.delivered_at.isoformat(),
+        message_id=delivery.external_message_id,
+        selected_urls=[item.item.item_url for item in pipeline_result.curate_result.selected_items],
+    )
+    return build_success_result(
         state_store=state_store,
         state=state,
         force=force,
         due=due,
         local_date=local_date,
+        digest_kind=digest_kind,
+        message_key=message_key,
         reference_now=reference_now,
         pipeline_result=pipeline_result,
-        delivery_result=delivery_result,
+        delivery_result=delivery,
     )
 
 
-def _build_error_result(
-    state_store: JsonSchedulerStateStore,
-    state: SchedulerState,
+def _persist_sent_message(
     *,
-    force: bool,
-    due: bool,
+    store: JsonSentMessageStore,
+    message_key: str,
+    digest_kind: DigestKind,
     local_date: str,
-    exc: Exception,
-) -> ScheduleRunResult:
-    state.last_status = SchedulerStatus.ERROR
-    state.last_error_message = str(exc)
-    state_store.save(state)
-    return ScheduleRunResult(
-        executed=True,
-        forced=force,
-        due=due,
-        reason="run failed",
-        status=SchedulerStatus.ERROR,
-        exit_code=1,
-        delivered=False,
-        digest=None,
-        state=state,
-        local_date=local_date,
+    delivered_at: str,
+    message_id: str,
+    selected_urls: list[str],
+) -> None:
+    store.upsert(
+        SentMessageRecord(
+            message_key=message_key,
+            digest_kind=digest_kind,
+            local_date=local_date,
+            sent_at=delivered_at,
+            telegram_message_id=message_id,
+            selected_urls=selected_urls,
+        )
     )
-
-
-def _build_delivery_error_result(
-    *,
-    state_store: JsonSchedulerStateStore,
-    state: SchedulerState,
-    force: bool,
-    due: bool,
-    local_date: str,
-    pipeline_result: FullPipelineRunResult,
-    exc: MessengerError,
-) -> ScheduleRunResult:
-    _apply_pipeline_state(state, pipeline_result=pipeline_result)
-    state.last_status = SchedulerStatus.ERROR
-    state.last_error_message = f"delivery failed: {exc}"
-    state.last_delivery_error = str(exc)
-    state_store.save(state)
-    return ScheduleRunResult(
-        executed=True,
-        forced=force,
-        due=due,
-        reason="delivery failed",
-        status=SchedulerStatus.ERROR,
-        exit_code=1,
-        delivered=False,
-        digest=pipeline_result.digest,
-        state=state,
-        local_date=local_date,
-    )
-
-
-def _build_success_result(
-    *,
-    state_store: JsonSchedulerStateStore,
-    state: SchedulerState,
-    force: bool,
-    due: bool,
-    local_date: str,
-    reference_now: datetime,
-    pipeline_result: FullPipelineRunResult,
-    delivery_result: DeliveryResult,
-) -> ScheduleRunResult:
-    has_failures = bool(
-        pipeline_result.fetch_result.failed_sources
-        or pipeline_result.parse_result.failed_sources
-        or pipeline_result.curate_result.failed_sources
-    )
-    status = SchedulerStatus.PARTIAL if has_failures else SchedulerStatus.SUCCESS
-    _apply_pipeline_state(state, pipeline_result=pipeline_result)
-    state.last_status = status
-    state.last_run_date_local = local_date
-    state.last_success_at = reference_now.isoformat()
-    state.last_error_message = None
-    state.last_delivery_at = delivery_result.delivered_at.isoformat()
-    state.last_delivery_message_id = delivery_result.external_message_id
-    state.last_delivery_error = delivery_result.warning_message
-    state_store.save(state)
-    return ScheduleRunResult(
-        executed=True,
-        forced=force,
-        due=due,
-        reason="run executed",
-        status=status,
-        exit_code=0,
-        delivered=True,
-        digest=pipeline_result.digest,
-        state=state,
-        local_date=local_date,
-    )
-
-
-def _apply_pipeline_state(state: SchedulerState, *, pipeline_result: FullPipelineRunResult) -> None:
-    state.last_digest_length = len(pipeline_result.digest)
-    state.last_curated_count = pipeline_result.curate_result.actual_count
-    state.last_failed_sources = sorted(
-        {
-            source_id.value
-            for source_id in (
-                pipeline_result.fetch_result.failed_sources
-                + pipeline_result.parse_result.failed_sources
-                + pipeline_result.curate_result.failed_sources
-            )
-        }
-    )
-    state.last_source_status = {
-        result.source_id.value: result.status.value
-        for result in pipeline_result.fetch_result.results
-    }

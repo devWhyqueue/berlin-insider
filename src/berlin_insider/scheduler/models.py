@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from enum import StrEnum
 
+from berlin_insider.digest import DigestKind
+
 
 class SchedulerStatus(StrEnum):
     SUCCESS = "success"
@@ -14,9 +16,11 @@ class SchedulerStatus(StrEnum):
 @dataclass(slots=True)
 class ScheduleConfig:
     timezone: str = "Europe/Berlin"
-    weekday: str = "friday"
-    hour: int = 8
-    minute: int = 0
+    daily_hour: int = 8
+    daily_minute: int = 0
+    weekend_weekday: str = "friday"
+    weekend_hour: int = 8
+    weekend_minute: int = 0
 
 
 @dataclass(slots=True)
@@ -33,6 +37,7 @@ class SchedulerState:
     last_delivery_at: str | None = None
     last_delivery_message_id: str | None = None
     last_delivery_error: str | None = None
+    last_run_date_by_kind: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass(slots=True)
@@ -47,3 +52,5 @@ class ScheduleRunResult:
     digest: str | None
     state: SchedulerState
     local_date: str
+    digest_kind: DigestKind | None
+    message_key: str | None = None

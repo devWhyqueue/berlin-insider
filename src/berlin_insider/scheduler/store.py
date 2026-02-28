@@ -80,4 +80,16 @@ def _state_from_payload(payload: dict[str, object]) -> SchedulerState:
         last_delivery_at=_opt_str(payload.get("last_delivery_at")),
         last_delivery_message_id=_opt_str(payload.get("last_delivery_message_id")),
         last_delivery_error=_opt_str(payload.get("last_delivery_error")),
+        last_run_date_by_kind=_run_dates_by_kind(
+            payload.get("last_run_date_by_kind"), legacy=payload.get("last_run_date_local")
+        ),
     )
+
+
+def _run_dates_by_kind(value: object, *, legacy: object) -> dict[str, str]:
+    parsed = _str_map(value)
+    if parsed:
+        return parsed
+    if isinstance(legacy, str):
+        return {"weekend": legacy}
+    return {}

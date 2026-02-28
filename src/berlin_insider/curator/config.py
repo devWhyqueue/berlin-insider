@@ -2,11 +2,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from berlin_insider.digest import DigestKind
 from berlin_insider.parser.models import ParsedCategory
 
 
 @dataclass(slots=True)
 class CuratorConfig:
+    digest_kind: DigestKind = DigestKind.WEEKEND
     target_count: int = 7
     min_count_fallback: int = 5
     weekend_start_hour_friday: int = 18

@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 
 import httpx
 
-from berlin_insider.messenger.models import DeliveryResult, MessengerError
+from berlin_insider.messenger.models import DeliveryResult, FeedbackMetadata, MessengerError
 
 _DEFAULT_API_BASE = "https://api.telegram.org"
 
@@ -47,18 +47,51 @@ class TelegramMessenger:
             raise MessengerError("missing required Telegram environment variables")
         return cls(bot_token=bot_token, chat_id=chat_id, api_base=api_base)
 
-    def send_digest(self, *, text: str) -> DeliveryResult:
+    def send_digest(
+        self, *, text: str, feedback_metadata: FeedbackMetadata | None = None
+    ) -> DeliveryResult:
         """Send digest text through Telegram Bot API."""
-        response = self._post_send_message(text=text)
+        response = self._post_send_message(text=text, feedback_metadata=feedback_metadata)
         message_id = _extract_message_id(response)
         return DeliveryResult(
             delivered_at=datetime.now(UTC),
             external_message_id=str(message_id),
         )
 
-    def _post_send_message(self, *, text: str) -> httpx.Response:
-        payload = _send_message_payload(chat_id=self._chat_id, text=text)
+    def get_updates(
+        self, *, offset: int | None = None, timeout_seconds: int = 0
+    ) -> list[dict[str, object]]:
+        """Fetch Telegram updates from the Bot API."""
+        payload: dict[str, object] = {"timeout": timeout_seconds}
+        if offset is not None:
+            payload["offset"] = offset
+        response = self._post_api("getUpdates", payload=payload)
+        payload_obj = _json_payload(response)
+        if payload_obj.get("ok") is not True:
+            raise MessengerError("telegram API rejected updates request")
+        result = payload_obj.get("result")
+        if not isinstance(result, list):
+            raise MessengerError("telegram updates payload has unexpected shape")
+        return [item for item in result if isinstance(item, dict)]
+
+    def answer_callback_query(self, *, callback_query_id: str) -> None:
+        """Acknowledge callback query events."""
+        self._post_api("answerCallbackQuery", payload={"callback_query_id": callback_query_id})
+
+    def _post_send_message(
+        self, *, text: str, feedback_metadata: FeedbackMetadata | None = None
+    ) -> httpx.Response:
+        payload = _send_message_payload(
+            chat_id=self._chat_id,
+            text=text,
+            feedback_metadata=feedback_metadata,
+        )
+        return self._post_api("sendMessage", payload=payload)
+
+    def _post_api(self, method: str, *, payload: dict[str, object]) -> httpx.Response:
         url = f"{self._api_base}/bot{self._bot_token}/sendMessage"
+        if method != "sendMessage":
+            url = f"{self._api_base}/bot{self._bot_token}/{method}"
         try:
             response = httpx.post(url, json=payload, timeout=self._timeout_seconds)
         except (
@@ -69,13 +102,27 @@ class TelegramMessenger:
         return response
 
 
-def _send_message_payload(*, chat_id: str, text: str) -> dict[str, object]:
-    return {
+def _send_message_payload(
+    *, chat_id: str, text: str, feedback_metadata: FeedbackMetadata | None = None
+) -> dict[str, object]:
+    payload: dict[str, object] = {
         "chat_id": chat_id,
         "text": text,
         "parse_mode": "MarkdownV2",
         "disable_web_page_preview": True,
     }
+    if feedback_metadata is not None:
+        kind = feedback_metadata.digest_kind.value
+        key = feedback_metadata.message_key
+        payload["reply_markup"] = {
+            "inline_keyboard": [
+                [
+                    {"text": "👍", "callback_data": f"fb:v1:{kind}:{key}:up"},
+                    {"text": "👎", "callback_data": f"fb:v1:{kind}:{key}:down"},
+                ]
+            ]
+        }
+    return payload
 
 
 def _validate_http_status(response: httpx.Response) -> None:

@@ -2,6 +2,7 @@ from datetime import UTC, datetime
 import json
 
 import berlin_insider.cli as cli
+from berlin_insider.digest import DigestKind
 from berlin_insider.scheduler.models import ScheduleRunResult, SchedulerState, SchedulerStatus
 
 
@@ -30,6 +31,8 @@ def _result(*, executed: bool, forced: bool, due: bool, status: SchedulerStatus)
             last_delivery_error=None,
         ),
         local_date="2026-02-27",
+        digest_kind=DigestKind.WEEKEND,
+        message_key="weekend-2026-02-27-abcdef",
     )
 
 
@@ -87,5 +90,7 @@ def test_cli_schedule_json_schema(monkeypatch, caplog) -> None:
         "digest",
         "state",
         "local_date",
+        "digest_kind",
+        "message_key",
     }
     assert payload["status"] == "success"

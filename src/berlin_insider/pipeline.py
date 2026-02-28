@@ -8,6 +8,7 @@ from berlin_insider.curator.config import CuratorConfig
 from berlin_insider.curator.models import CurateRunResult
 from berlin_insider.curator.orchestrator import Curator
 from berlin_insider.curator.store import JsonSentItemStore
+from berlin_insider.digest import DigestKind
 from berlin_insider.fetcher.models import FetchContext, FetchRunResult, SourceId
 from berlin_insider.fetcher.orchestrator import Fetcher
 from berlin_insider.formatter import render_telegram_digest
@@ -28,6 +29,7 @@ class FullPipelineRunResult:
     parse_result: ParseRunResult
     curate_result: CurateRunResult
     digest: str
+    digest_kind: DigestKind
 
 
 def build_fetch_context(
@@ -62,6 +64,7 @@ def run_full_pipeline(
     context: FetchContext,
     sent_store_path: Path,
     target_items: int,
+    digest_kind: DigestKind = DigestKind.WEEKEND,
     source_ids: list[SourceId] | None = None,
 ) -> FullPipelineRunResult:
     """Run fetch, parse, curate, and digest formatting in one call."""
@@ -70,12 +73,20 @@ def run_full_pipeline(
         parse_result,
         reference_now=fetch_result.finished_at,
         store=JsonSentItemStore(sent_store_path),
-        config=CuratorConfig(target_count=target_items),
+        config=CuratorConfig(
+            target_count=1 if digest_kind == DigestKind.DAILY else target_items,
+            digest_kind=digest_kind,
+        ),
     )
-    digest = render_telegram_digest(curate_result, reference_now=fetch_result.finished_at)
+    digest = render_telegram_digest(
+        curate_result,
+        reference_now=fetch_result.finished_at,
+        digest_kind=digest_kind,
+    )
     return FullPipelineRunResult(
         fetch_result=fetch_result,
         parse_result=parse_result,
         curate_result=curate_result,
         digest=digest,
+        digest_kind=digest_kind,
     )

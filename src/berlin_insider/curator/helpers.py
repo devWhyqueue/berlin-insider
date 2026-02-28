@@ -7,7 +7,14 @@ from difflib import SequenceMatcher
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from berlin_insider.curator.config import CuratorConfig
-from berlin_insider.curator.models import CuratedItem, CurateStatus, DroppedItem, SourceCurateResult
+from berlin_insider.curator.models import (
+    CuratedItem,
+    CurateRunResult,
+    CurateStatus,
+    DroppedItem,
+    SourceCurateResult,
+)
+from berlin_insider.digest import DigestKind
 from berlin_insider.parser.models import ParsedCategory, ParsedItem, ParseRunResult, ParseStatus
 
 try:
@@ -93,6 +100,25 @@ def backfill(
     return selected, selected_ids
 
 
+def nearest_upcoming_for_local_date(
+    pool: list[Candidate], *, local_date: date
+) -> tuple[list[Candidate], list[Candidate]]:
+    """Split candidates into same-day picks and upcoming fallback by local date."""
+    same_day: list[Candidate] = []
+    upcoming: list[Candidate] = []
+    for candidate in pool:
+        start_at = candidate.item.event_start_at
+        if start_at is None:
+            continue
+        local_start = _to_local(start_at)
+        if local_start.date() == local_date:
+            same_day.append(candidate)
+            continue
+        if local_start.date() > local_date:
+            upcoming.append(candidate)
+    return same_day, upcoming
+
+
 def category_counts(selected: list[Candidate]) -> dict[ParsedCategory, int]:
     """Count selected candidates by parsed category."""
     counts: dict[ParsedCategory, int] = {category: 0 for category in ParsedCategory}
@@ -164,6 +190,44 @@ def curate_status(parse_status: ParseStatus, dropped_items: list[DroppedItem]) -
 def to_curated(candidate: Candidate) -> CuratedItem:
     """Convert internal candidate object into public CuratedItem model."""
     return CuratedItem(item=candidate.item, score=candidate.score, selection_notes=candidate.notes)
+
+
+def build_run_result(
+    *,
+    parse_result: ParseRunResult,
+    source_drops: dict[int, list[DroppedItem]],
+    selected: list[Candidate],
+    weekend_start: datetime,
+    weekend_end: datetime,
+    fallback_warning: str | None,
+    target_count: int,
+    digest_kind: DigestKind,
+) -> CurateRunResult:
+    """Build run-level curation result from selected and dropped source candidates."""
+    source_results = build_source_results(parse_result, source_drops, selected)
+    warnings = (
+        [f"Weekend window: {weekend_start.isoformat()} to {weekend_end.isoformat()}"]
+        if digest_kind == DigestKind.WEEKEND
+        else ["Daily selection mode active"]
+    )
+    if fallback_warning:
+        warnings.append(fallback_warning)
+    failed_sources = [
+        result.source_id for result in source_results if result.status == CurateStatus.ERROR
+    ]
+    dropped_count = sum(len(result.dropped_items) for result in source_results)
+    return CurateRunResult(
+        started_at=parse_result.started_at,
+        finished_at=parse_result.finished_at,
+        results=source_results,
+        selected_items=[to_curated(candidate) for candidate in selected],
+        dropped_count=dropped_count,
+        failed_sources=failed_sources,
+        target_count=target_count,
+        actual_count=len(selected),
+        category_counts=category_counts(selected),
+        warnings=warnings,
+    )
 
 
 def _count_category(selected: list[Candidate], category: ParsedCategory) -> int:

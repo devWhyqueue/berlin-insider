@@ -34,6 +34,7 @@ def test_scheduler_store_persists_state_atomically(tmp_path: Path) -> None:
         last_delivery_at="2026-02-27T07:00:03+00:00",
         last_delivery_message_id="42",
         last_delivery_error=None,
+        last_run_date_by_kind={"weekend": "2026-02-27"},
     )
 
     store.save(state)
@@ -47,3 +48,4 @@ def test_scheduler_store_persists_state_atomically(tmp_path: Path) -> None:
     assert reloaded.last_status == SchedulerStatus.SUCCESS
     assert reloaded.last_digest_length == 123
     assert reloaded.last_delivery_message_id == "42"
+    assert reloaded.last_run_date_by_kind["weekend"] == "2026-02-27"

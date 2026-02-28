@@ -4,6 +4,7 @@ from berlin_insider.curator.config import CuratorConfig
 from berlin_insider.curator.models import DropReason
 from berlin_insider.curator.orchestrator import Curator
 from berlin_insider.curator.store import NoOpSentItemStore
+from berlin_insider.digest import DigestKind
 from berlin_insider.fetcher.models import SourceId
 from berlin_insider.parser.models import (
     ParseRunResult,
@@ -140,4 +141,51 @@ def test_curator_allows_unknown_as_fallback() -> None:
         config=CuratorConfig(target_count=7, min_count_fallback=2),
     )
     assert result.actual_count == 2
+    assert any("Fallback selection active" in warning for warning in result.warnings)
+
+
+def test_curator_daily_selects_single_same_day_item() -> None:
+    parse = _parse_result(
+        [
+            _parsed_item(
+                "https://example.com/today",
+                start=datetime(2026, 2, 23, 12, 0, tzinfo=UTC),
+            ),
+            _parsed_item(
+                "https://example.com/tomorrow",
+                start=datetime(2026, 2, 24, 12, 0, tzinfo=UTC),
+            ),
+        ]
+    )
+    result = Curator().run(
+        parse,
+        reference_now=datetime(2026, 2, 23, 8, 0, tzinfo=UTC),
+        store=NoOpSentItemStore(),
+        config=CuratorConfig(target_count=1, digest_kind=DigestKind.DAILY),
+    )
+    assert result.actual_count == 1
+    assert result.selected_items[0].item.item_url == "https://example.com/today"
+
+
+def test_curator_daily_falls_back_to_upcoming() -> None:
+    parse = _parse_result(
+        [
+            _parsed_item(
+                "https://example.com/upcoming",
+                start=datetime(2026, 2, 24, 12, 0, tzinfo=UTC),
+            ),
+            _parsed_item(
+                "https://example.com/later",
+                start=datetime(2026, 2, 25, 12, 0, tzinfo=UTC),
+            ),
+        ]
+    )
+    result = Curator().run(
+        parse,
+        reference_now=datetime(2026, 2, 23, 8, 0, tzinfo=UTC),
+        store=NoOpSentItemStore(),
+        config=CuratorConfig(target_count=1, digest_kind=DigestKind.DAILY),
+    )
+    assert result.actual_count == 1
+    assert result.selected_items[0].item.item_url == "https://example.com/upcoming"
     assert any("Fallback selection active" in warning for warning in result.warnings)

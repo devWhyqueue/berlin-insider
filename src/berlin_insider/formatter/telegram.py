@@ -6,6 +6,7 @@ from datetime import UTC, datetime, timedelta, tzinfo
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from berlin_insider.curator.models import CuratedItem, CurateRunResult
+from berlin_insider.digest import DigestKind
 from berlin_insider.formatter.models import DigestFormatConfig
 from berlin_insider.parser.models import ParsedCategory, ParsedItem
 
@@ -36,6 +37,19 @@ def render_telegram_digest(
     curate: CurateRunResult,
     *,
     reference_now: datetime,
+    digest_kind: DigestKind = DigestKind.WEEKEND,
+    config: DigestFormatConfig | None = None,
+) -> str:
+    """Render curated picks as a Telegram MarkdownV2 digest."""
+    if digest_kind == DigestKind.DAILY:
+        return render_daily_telegram_digest(curate, reference_now=reference_now, config=config)
+    return render_weekend_telegram_digest(curate, reference_now=reference_now, config=config)
+
+
+def render_weekend_telegram_digest(
+    curate: CurateRunResult,
+    *,
+    reference_now: datetime,
     config: DigestFormatConfig | None = None,
 ) -> str:
     """Render curated weekend picks as a Telegram MarkdownV2 digest."""
@@ -54,6 +68,31 @@ def render_telegram_digest(
     if _needs_fallback_note(curate):
         lines.extend(_fallback_lines())
     lines.extend(_render_sections(items, cfg=cfg, tz=tz))
+    lines.extend(_render_footer(items, local_now))
+    return "\n".join(lines)
+
+
+def render_daily_telegram_digest(
+    curate: CurateRunResult,
+    *,
+    reference_now: datetime,
+    config: DigestFormatConfig | None = None,
+) -> str:
+    """Render one daily curated recommendation in Telegram MarkdownV2 format."""
+    cfg = config or DigestFormatConfig()
+    tz = _timezone_or_utc(cfg.timezone)
+    local_now = reference_now.astimezone(tz)
+    lines = [
+        _escape_text(f"Berlin Insider | Tip of the Day ({_format_day(local_now)}, {cfg.timezone})"),
+        "",
+    ]
+    items = curate.selected_items[:1]
+    if not items:
+        lines.append(_escape_text("No strong tip found today."))
+        lines.append(_escape_text("We will share a fresh pick on the next run."))
+        return "\n".join(lines)
+    lines.append(_render_bullet(items[0], cfg=cfg, tz=tz))
+    lines.append("")
     lines.extend(_render_footer(items, local_now))
     return "\n".join(lines)
 

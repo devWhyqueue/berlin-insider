@@ -1,9 +1,11 @@
 from datetime import UTC, datetime
 from pathlib import Path
 
+from berlin_insider.digest import DigestKind
 from berlin_insider.messenger.models import DeliveryResult, MessengerError
 import berlin_insider.scheduler.orchestrator as scheduler_module
 from berlin_insider.curator.models import CurateRunResult
+from berlin_insider.feedback.store import JsonSentMessageStore
 from berlin_insider.fetcher.models import FetchRunResult
 from berlin_insider.parser.models import ParseRunResult
 from berlin_insider.pipeline import FullPipelineRunResult
@@ -22,7 +24,7 @@ class _MemoryStateStore:
 
 
 class _FakeMessenger:
-    def send_digest(self, *, text: str) -> DeliveryResult:
+    def send_digest(self, *, text: str, feedback_metadata=None) -> DeliveryResult:  # noqa: ANN001
         return DeliveryResult(
             delivered_at=datetime(2026, 2, 27, 8, 0, tzinfo=UTC),
             external_message_id="42",
@@ -68,11 +70,11 @@ def test_scheduler_skips_when_not_due() -> None:
     store = _MemoryStateStore()
     result = scheduler_module.Scheduler().run_once(
         state_store=store,  # type: ignore[arg-type]
-        config=ScheduleConfig(timezone="UTC", weekday="friday", hour=8, minute=0),
+        config=ScheduleConfig(timezone="UTC"),
         sent_store_path=Path(".data/sent_links.json"),
         target_items=7,
         force=False,
-        now_utc=datetime(2026, 2, 27, 7, 59, tzinfo=UTC),
+        now_utc=datetime(2026, 2, 28, 7, 59, tzinfo=UTC),
     )
     assert result.executed is False
     assert result.status == SchedulerStatus.SKIPPED
@@ -80,32 +82,36 @@ def test_scheduler_skips_when_not_due() -> None:
     assert store.state.last_status == SchedulerStatus.SKIPPED
 
 
-def test_scheduler_executes_due_run_success(monkeypatch) -> None:
+def test_scheduler_executes_due_run_success_daily(monkeypatch, tmp_path: Path) -> None:
     def _fake_run_full_pipeline(**kwargs):  # noqa: ANN003, ANN202
         return FullPipelineRunResult(
             fetch_result=_empty_fetch(),
             parse_result=_empty_parse(),
             curate_result=_empty_curate(),
             digest="Berlin Insider",
+            digest_kind=DigestKind.DAILY,
         )
 
     monkeypatch.setattr(scheduler_module, "run_full_pipeline", _fake_run_full_pipeline)
     store = _MemoryStateStore()
     result = scheduler_module.Scheduler().run_once(
         state_store=store,  # type: ignore[arg-type]
-        config=ScheduleConfig(timezone="UTC", weekday="friday", hour=8, minute=0),
+        config=ScheduleConfig(timezone="UTC"),
         sent_store_path=Path(".data/sent_links.json"),
         target_items=7,
         force=False,
-        now_utc=datetime(2026, 2, 27, 8, 0, tzinfo=UTC),
+        now_utc=datetime(2026, 2, 23, 8, 0, tzinfo=UTC),
         messenger=_FakeMessenger(),
+        sent_message_store=JsonSentMessageStore(tmp_path / "sent_messages.json"),
     )
     assert result.executed is True
     assert result.status == SchedulerStatus.SUCCESS
     assert result.exit_code == 0
     assert result.delivered is True
     assert result.digest == "Berlin Insider"
-    assert store.state.last_run_date_local == "2026-02-27"
+    assert store.state.last_run_date_local == "2026-02-23"
+    assert store.state.last_run_date_by_kind["daily"] == "2026-02-23"
+    assert result.digest_kind == DigestKind.DAILY
     assert store.state.last_delivery_message_id == "42"
 
 
@@ -117,7 +123,7 @@ def test_scheduler_returns_error_when_pipeline_raises(monkeypatch) -> None:
     store = _MemoryStateStore()
     result = scheduler_module.Scheduler().run_once(
         state_store=store,  # type: ignore[arg-type]
-        config=ScheduleConfig(timezone="UTC", weekday="friday", hour=8, minute=0),
+        config=ScheduleConfig(timezone="UTC"),
         sent_store_path=Path(".data/sent_links.json"),
         target_items=7,
         force=True,
@@ -132,7 +138,7 @@ def test_scheduler_returns_error_when_pipeline_raises(monkeypatch) -> None:
 
 def test_scheduler_returns_error_when_delivery_fails(monkeypatch) -> None:
     class _FailingMessenger:
-        def send_digest(self, *, text: str) -> DeliveryResult:
+        def send_digest(self, *, text: str, feedback_metadata=None) -> DeliveryResult:  # noqa: ANN001
             raise MessengerError("forbidden")
 
     def _fake_run_full_pipeline(**kwargs):  # noqa: ANN003, ANN202
@@ -141,13 +147,14 @@ def test_scheduler_returns_error_when_delivery_fails(monkeypatch) -> None:
             parse_result=_empty_parse(),
             curate_result=_empty_curate(),
             digest="Berlin Insider",
+            digest_kind=DigestKind.WEEKEND,
         )
 
     monkeypatch.setattr(scheduler_module, "run_full_pipeline", _fake_run_full_pipeline)
     store = _MemoryStateStore()
     result = scheduler_module.Scheduler().run_once(
         state_store=store,  # type: ignore[arg-type]
-        config=ScheduleConfig(timezone="UTC", weekday="friday", hour=8, minute=0),
+        config=ScheduleConfig(timezone="UTC"),
         sent_store_path=Path(".data/sent_links.json"),
         target_items=7,
         force=True,
