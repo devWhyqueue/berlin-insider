@@ -73,6 +73,7 @@ def _insert_parsed_items(conn, run_id: str, parse_result: ParseRunResult) -> Non
             title,
             description,
             detail_text,
+            summary,
             event_start_at,
             event_end_at,
             location,
@@ -82,7 +83,7 @@ def _insert_parsed_items(conn, run_id: str, parse_result: ParseRunResult) -> Non
             weekend_confidence,
             parse_notes_json,
             raw_json
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         _parsed_item_rows(run_id, parse_result),
     )
@@ -100,6 +101,7 @@ def _parsed_item_rows(run_id: str, parse_result: ParseRunResult) -> list[tuple[o
                     item.title,
                     item.description,
                     item.detail_text,
+                    item.summary,
                     item.event_start_at.isoformat() if item.event_start_at else None,
                     item.event_end_at.isoformat() if item.event_end_at else None,
                     item.location,

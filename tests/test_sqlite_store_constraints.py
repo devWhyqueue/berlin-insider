@@ -131,3 +131,4 @@ def test_ensure_schema_adds_detail_text_column_to_existing_db(tmp_path: Path) ->
         columns = conn.execute("PRAGMA table_info(parsed_items)").fetchall()
     column_names = {str(column[1]) for column in columns}
     assert "detail_text" in column_names
+    assert "summary" in column_names

@@ -43,6 +43,10 @@ Required environment variables:
 Optional:
 
 - `TELEGRAM_API_BASE` (default: `https://api.telegram.org`)
+- `OPENAI_API_KEY` (enables one-sentence `gpt-5-mini` summaries for parsed items/digests)
+
+When `OPENAI_API_KEY` is missing or summary generation fails for an item, the pipeline still runs
+and sends digests; that item is shown without a summary line.
 
 Example cron (Linux, host timezone set to Europe/Berlin):
 

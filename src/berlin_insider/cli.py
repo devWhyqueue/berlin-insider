@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from dataclasses import asdict
 from datetime import UTC, datetime
 from pathlib import Path
@@ -41,6 +42,7 @@ logging.basicConfig(level=logging.INFO, format="%(message)s")
 
 def main() -> None:
     """Run the command-line interface."""
+    _load_dotenv_defaults()
     parser = build_parser()
     args = parser.parse_args()
     if args.command == "fetch":
@@ -201,3 +203,20 @@ def _log_fetch_with_parse_and_curate(
 def _exit_on_nonzero(exit_code: int) -> None:
     if exit_code != 0:
         raise SystemExit(exit_code)
+
+
+def _load_dotenv_defaults(path: Path | None = None) -> None:
+    """Load KEY=VALUE pairs from .env into process environment without overriding existing values."""
+    env_path = path or Path(".env")
+    if not env_path.exists():
+        return
+    for raw_line in env_path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip()
+        if not key:
+            continue
+        parsed = value.strip().strip("'\"")
+        os.environ.setdefault(key, parsed)

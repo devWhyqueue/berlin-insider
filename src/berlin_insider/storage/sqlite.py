@@ -81,6 +81,7 @@ CREATE TABLE IF NOT EXISTS parsed_items (
   title TEXT,
   description TEXT,
   detail_text TEXT,
+  summary TEXT,
   event_start_at TEXT,
   event_end_at TEXT,
   location TEXT,
@@ -103,15 +104,16 @@ def ensure_schema(path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with sqlite_connection(path) as conn:
         conn.executescript(SCHEMA)
-        _ensure_parsed_items_detail_column(conn)
+        _ensure_parsed_items_column(conn, column_name="detail_text")
+        _ensure_parsed_items_column(conn, column_name="summary")
 
 
-def _ensure_parsed_items_detail_column(conn: sqlite3.Connection) -> None:
+def _ensure_parsed_items_column(conn: sqlite3.Connection, *, column_name: str) -> None:
     columns = conn.execute("PRAGMA table_info(parsed_items)").fetchall()
     existing_names = {str(column[1]) for column in columns}
-    if "detail_text" in existing_names:
+    if column_name in existing_names:
         return
-    conn.execute("ALTER TABLE parsed_items ADD COLUMN detail_text TEXT")
+    conn.execute(f"ALTER TABLE parsed_items ADD COLUMN {column_name} TEXT")
 
 
 @contextmanager

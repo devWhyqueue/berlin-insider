@@ -1,4 +1,5 @@
 from datetime import UTC, datetime
+from pathlib import Path
 
 import berlin_insider.cli as cli
 from berlin_insider.curator.models import CuratedItem, CurateRunResult, CurateStatus, SourceCurateResult
@@ -220,3 +221,20 @@ def test_cli_parse_only_ignores_digest_flag(monkeypatch, caplog) -> None:
     assert "Parsed total items: 1" in caplog.text
     assert "Curated total items" not in caplog.text
     assert "Berlin Insider" not in caplog.text
+
+
+def test_load_dotenv_defaults_sets_missing_values_only(monkeypatch, tmp_path: Path) -> None:
+    env_file = tmp_path / ".env"
+    env_file.write_text(
+        "OPENAI_API_KEY=from_file\nTELEGRAM_CHAT_ID=from_file_chat\nTELEGRAM_BOT_TOKEN=file_token\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("OPENAI_API_KEY", "preexisting")
+    monkeypatch.delenv("TELEGRAM_CHAT_ID", raising=False)
+    monkeypatch.delenv("TELEGRAM_BOT_TOKEN", raising=False)
+
+    cli._load_dotenv_defaults(env_file)
+
+    assert cli.os.environ["OPENAI_API_KEY"] == "preexisting"
+    assert cli.os.environ["TELEGRAM_CHAT_ID"] == "from_file_chat"
+    assert cli.os.environ["TELEGRAM_BOT_TOKEN"] == "file_token"

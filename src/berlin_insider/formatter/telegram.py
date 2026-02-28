@@ -68,7 +68,7 @@ def render_weekend_telegram_digest(
     if _needs_fallback_note(curate):
         lines.extend(_fallback_lines())
     lines.extend(_render_sections(items, cfg=cfg, tz=tz))
-    lines.extend(_render_footer(items, local_now))
+    lines.extend(_render_footer(items))
     return "\n".join(lines)
 
 
@@ -93,7 +93,7 @@ def render_daily_telegram_digest(
         return "\n".join(lines)
     lines.append(_render_bullet(items[0], cfg=cfg, tz=tz))
     lines.append("")
-    lines.extend(_render_footer(items, local_now))
+    lines.extend(_render_footer(items))
     return "\n".join(lines)
 
 
@@ -135,12 +135,8 @@ def _render_sections(items: list[CuratedItem], *, cfg: DigestFormatConfig, tz: t
     return lines
 
 
-def _render_footer(items: list[CuratedItem], local_now: datetime) -> list[str]:
-    sources = {entry.item.source_id.value for entry in items}
-    return [
-        _escape_text(f"Sources covered: {len(sources)}"),
-        _escape_text(f"Generated: {_format_generated(local_now)}"),
-    ]
+def _render_footer(items: list[CuratedItem]) -> list[str]:  # noqa: ARG001
+    return []
 
 
 def _group_items(items: list[CuratedItem]) -> dict[ParsedCategory, list[CuratedItem]]:
@@ -158,7 +154,10 @@ def _render_bullet(curated_item: CuratedItem, *, cfg: DigestFormatConfig, tz: tz
     parts = [f"\\- [{title}]({url})", date_text]
     if cfg.show_location_when_present and item.location:
         parts.append(_escape_text(item.location))
-    return " \\| ".join(parts)
+    base_line = " \\| ".join(parts)
+    if item.summary is None:
+        return base_line
+    return f"{base_line}\n{_escape_text(item.summary)}"
 
 
 def _timezone_or_utc(timezone_name: str) -> tzinfo:
@@ -193,11 +192,6 @@ def _format_item_date(value: datetime | None, *, tz: tzinfo) -> str:
     if local.hour == 0 and local.minute == 0 and local.second == 0:
         return day_text
     return f"{day_text} {local.hour:02d}:{local.minute:02d}"
-
-
-def _format_generated(value: datetime) -> str:
-    zone = value.tzname() or "UTC"
-    return f"{value.year:04d}-{value.month:02d}-{value.day:02d} {value.hour:02d}:{value.minute:02d} {zone}"
 
 
 def _needs_fallback_note(curate: CurateRunResult) -> bool:

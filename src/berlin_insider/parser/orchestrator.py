@@ -1,15 +1,20 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import UTC, datetime
 from time import perf_counter
 
 from berlin_insider.fetcher.models import FetchRunResult, FetchStatus, SourceFetchResult
-from berlin_insider.parser.models import ParseRunResult, ParseStatus, SourceParseResult
+from berlin_insider.parser.models import ParsedItem, ParseRunResult, ParseStatus, SourceParseResult
 from berlin_insider.parser.normalize import normalize_fetched_item
+from berlin_insider.parser.summarizer import OpenAISummaryGenerator, SummaryGenerator
 
 
 class Parser:
     """Normalize fetched items into parse-ready canonical objects."""
+
+    def __init__(self, *, summary_generator: SummaryGenerator | None = None) -> None:
+        self._summary_generator = summary_generator or OpenAISummaryGenerator.from_env()
 
     def run(self, fetch_result: FetchRunResult) -> ParseRunResult:
         """Transform a fetch run into normalized parse results per source."""
@@ -43,7 +48,12 @@ class Parser:
             item_failures = 0
             for fetched_item in source_result.items:
                 try:
-                    items.append(normalize_fetched_item(fetched_item, reference_now=reference_now))
+                    parsed_item = normalize_fetched_item(fetched_item, reference_now=reference_now)
+                    items.append(
+                        self._with_summary(
+                            parsed_item, warnings=warnings, item_url=fetched_item.item_url
+                        )
+                    )
                 except Exception as exc:  # noqa: BLE001
                     item_failures += 1
                     warnings.append(f"Failed to parse item {fetched_item.item_url}: {exc}")
@@ -76,6 +86,18 @@ class Parser:
         if parsed_item_count == 0 or item_failures > 0:
             return ParseStatus.PARTIAL
         return ParseStatus.SUCCESS
+
+    def _with_summary(
+        self, parsed_item: ParsedItem, *, warnings: list[str], item_url: str
+    ) -> ParsedItem:
+        try:
+            summary = self._summary_generator.summarize(parsed_item)
+        except Exception as exc:  # noqa: BLE001
+            warnings.append(f"Failed to summarize item {item_url}: {exc}")
+            return parsed_item
+        if summary is None:
+            return parsed_item
+        return replace(parsed_item, summary=summary)
 
 
 def _duration_ms(started: float) -> int:

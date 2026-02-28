@@ -46,6 +46,7 @@ class ParsedItem:
     parse_notes: list[str] = field(default_factory=list)
     raw: dict[str, Any] = field(default_factory=dict)
     detail_text: str | None = None
+    summary: str | None = None
 
 
 @dataclass(slots=True)

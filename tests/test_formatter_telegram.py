@@ -15,6 +15,7 @@ def _parsed_item(
     start_at: datetime | None,
     location: str | None = "Berlin",
     source_id: SourceId = SourceId.MITVERGNUEGEN,
+    summary: str | None = None,
 ) -> ParsedItem:
     return ParsedItem(
         source_id=source_id,
@@ -30,6 +31,7 @@ def _parsed_item(
         weekend_confidence=0.9,
         parse_notes=[],
         raw={},
+        summary=summary,
     )
 
 
@@ -115,6 +117,7 @@ def test_formatter_escapes_markdown_v2_specials() -> None:
             category=ParsedCategory.EVENT,
             start_at=datetime(2026, 2, 28, 12, 0, tzinfo=UTC),
             location="A_B",
+            summary="Best [party] in Mitte!",
         ),
         score=0.8,
     )
@@ -125,6 +128,7 @@ def test_formatter_escapes_markdown_v2_specials() -> None:
     )
     assert "Rock \\[n\\] Roll \\(Live\\)\\!" in text
     assert "A\\_B" in text
+    assert "Best \\[party\\] in Mitte\\!" in text
     assert "https://example.com/path\\(test\\)" in text
 
 
@@ -144,6 +148,7 @@ def test_formatter_renders_daily_tip() -> None:
             url="https://example.com/daily",
             category=ParsedCategory.EVENT,
             start_at=datetime(2026, 2, 23, 18, 0, tzinfo=UTC),
+            summary="One-sentence daily summary.",
         ),
         score=0.9,
     )
@@ -155,3 +160,42 @@ def test_formatter_renders_daily_tip() -> None:
     )
     assert "Tip of the Day" in text
     assert "Daily Pick" in text
+    assert "One\\-sentence daily summary\\." in text
+
+
+def test_formatter_renders_weekend_summary_line() -> None:
+    item = CuratedItem(
+        item=_parsed_item(
+            title="Weekend Pick",
+            url="https://example.com/weekend",
+            category=ParsedCategory.EVENT,
+            start_at=datetime(2026, 2, 28, 12, 0, tzinfo=UTC),
+            summary="One-sentence weekend summary.",
+        ),
+        score=0.85,
+    )
+    text = render_telegram_digest(
+        _curate_result([item]),
+        reference_now=datetime(2026, 2, 27, 8, 0, tzinfo=UTC),
+        config=DigestFormatConfig(timezone="UTC"),
+    )
+    assert "One\\-sentence weekend summary\\." in text
+
+
+def test_formatter_omits_footer_metadata_lines() -> None:
+    item = CuratedItem(
+        item=_parsed_item(
+            title="Footer Check",
+            url="https://example.com/footer",
+            category=ParsedCategory.EVENT,
+            start_at=datetime(2026, 2, 28, 12, 0, tzinfo=UTC),
+        ),
+        score=0.85,
+    )
+    text = render_telegram_digest(
+        _curate_result([item]),
+        reference_now=datetime(2026, 2, 27, 8, 0, tzinfo=UTC),
+        config=DigestFormatConfig(timezone="UTC"),
+    )
+    assert "Sources covered" not in text
+    assert "Generated:" not in text

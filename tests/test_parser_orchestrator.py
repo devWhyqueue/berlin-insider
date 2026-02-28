@@ -98,3 +98,57 @@ def test_parser_marks_partial_when_single_item_fails(monkeypatch) -> None:
     assert parsed.results[0].status == ParseStatus.PARTIAL
     assert len(parsed.results[0].items) == 1
     assert any("Failed to parse item" in warning for warning in parsed.results[0].warnings)
+
+
+def test_parser_adds_summary_when_generator_returns_text() -> None:
+    class _FakeSummaryGenerator:
+        def summarize(self, item):  # noqa: ANN001, ANN202
+            return "One sentence summary."
+
+    fetch_result = FetchRunResult(
+        started_at=datetime(2026, 2, 27, 8, 0, tzinfo=UTC),
+        finished_at=datetime(2026, 2, 27, 9, 0, tzinfo=UTC),
+        results=[
+            SourceFetchResult(
+                source_id=SourceId.MITVERGNUEGEN,
+                status=FetchStatus.SUCCESS,
+                items=[_fetched_item(SourceId.MITVERGNUEGEN, "https://example.com/a")],
+                warnings=[],
+                error_message=None,
+                duration_ms=1,
+            )
+        ],
+        total_items=1,
+        failed_sources=[],
+    )
+
+    parsed = Parser(summary_generator=_FakeSummaryGenerator()).run(fetch_result)
+    assert parsed.results[0].items[0].summary == "One sentence summary."
+
+
+def test_parser_keeps_item_when_summary_generator_fails() -> None:
+    class _FailingSummaryGenerator:
+        def summarize(self, item):  # noqa: ANN001, ANN202
+            raise RuntimeError("summary api down")
+
+    fetch_result = FetchRunResult(
+        started_at=datetime(2026, 2, 27, 8, 0, tzinfo=UTC),
+        finished_at=datetime(2026, 2, 27, 9, 0, tzinfo=UTC),
+        results=[
+            SourceFetchResult(
+                source_id=SourceId.MITVERGNUEGEN,
+                status=FetchStatus.SUCCESS,
+                items=[_fetched_item(SourceId.MITVERGNUEGEN, "https://example.com/a")],
+                warnings=[],
+                error_message=None,
+                duration_ms=1,
+            )
+        ],
+        total_items=1,
+        failed_sources=[],
+    )
+
+    parsed = Parser(summary_generator=_FailingSummaryGenerator()).run(fetch_result)
+    assert len(parsed.results[0].items) == 1
+    assert parsed.results[0].items[0].summary is None
+    assert any("Failed to summarize item" in warning for warning in parsed.results[0].warnings)
