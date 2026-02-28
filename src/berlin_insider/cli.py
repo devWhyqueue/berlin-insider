@@ -18,6 +18,7 @@ from berlin_insider.curator.orchestrator import Curator
 from berlin_insider.curator.store import JsonSentItemStore
 from berlin_insider.fetcher.models import FetchContext, FetchRunResult, SourceId
 from berlin_insider.fetcher.orchestrator import Fetcher
+from berlin_insider.formatter import render_telegram_digest
 from berlin_insider.parser.models import ParseRunResult
 from berlin_insider.parser.orchestrator import Parser
 
@@ -55,7 +56,12 @@ def _run_fetch_command(args: argparse.Namespace) -> None:
         config=cur_config,
     )
     _log_fetch_with_parse_and_curate(
-        fetch_result, parse_result, curate_result, json_output=args.json
+        fetch_result,
+        parse_result,
+        curate_result,
+        reference_now=fetch_result.finished_at,
+        json_output=args.json,
+        digest_output=args.digest,
     )
 
 
@@ -90,15 +96,22 @@ def _log_fetch_with_parse_and_curate(
     parse_result: ParseRunResult,
     curate_result: CurateRunResult,
     *,
+    reference_now: datetime,
     json_output: bool,
+    digest_output: bool,
 ) -> None:
     if json_output:
-        payload = {
+        payload: dict[str, object] = {
             "fetch": asdict(fetch_result),
             "parse": asdict(parse_result),
             "curate": asdict(curate_result),
         }
+        if digest_output:
+            payload["digest"] = render_telegram_digest(curate_result, reference_now=reference_now)
         logger.info(json.dumps(payload, default=str, ensure_ascii=False, indent=2))
+        return
+    if digest_output:
+        logger.info(render_telegram_digest(curate_result, reference_now=reference_now))
         return
     logger.info(render_summary_with_parse_and_curate(fetch_result, parse_result, curate_result))
 
@@ -115,6 +128,11 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Restrict run to one or more source IDs",
     )
     fetch.add_argument("--json", action="store_true", help="Print full JSON output")
+    fetch.add_argument(
+        "--digest",
+        action="store_true",
+        help="Render Telegram MarkdownV2 digest text from curated output",
+    )
     fetch.add_argument(
         "--fetch-only",
         action="store_true",

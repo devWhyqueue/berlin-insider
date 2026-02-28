@@ -193,3 +193,30 @@ def test_cli_parse_only_skips_curator(monkeypatch, caplog) -> None:
 
     assert "Parsed total items: 1" in caplog.text
     assert "Curated total items" not in caplog.text
+
+
+def test_cli_parse_only_ignores_digest_flag(monkeypatch, caplog) -> None:
+    caplog.set_level("INFO")
+
+    class _FakeFetcher:
+        def run(self, *, context, source_ids=None):  # noqa: ANN001, ANN202
+            return _fetch_result()
+
+    class _FakeParser:
+        def run(self, fetch_result):  # noqa: ANN001, ANN202
+            return _parse_result()
+
+    class _FailIfCalledCurator:
+        def run(self, parse_result, *, reference_now, store, config):  # noqa: ANN001, ANN202
+            raise AssertionError("curator should not run for --parse-only")
+
+    monkeypatch.setattr(cli, "Fetcher", _FakeFetcher)
+    monkeypatch.setattr(cli, "Parser", _FakeParser)
+    monkeypatch.setattr(cli, "Curator", _FailIfCalledCurator)
+    monkeypatch.setattr("sys.argv", ["berlin-insider", "fetch", "--parse-only", "--digest"])
+
+    cli.main()
+
+    assert "Parsed total items: 1" in caplog.text
+    assert "Curated total items" not in caplog.text
+    assert "Berlin Insider" not in caplog.text

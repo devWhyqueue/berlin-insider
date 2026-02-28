@@ -67,3 +67,56 @@ def test_cli_json_includes_curate_payload(monkeypatch, caplog) -> None:
     payload = json.loads(caplog.records[-1].message)
     assert set(payload.keys()) == {"fetch", "parse", "curate"}
     assert payload["curate"]["target_count"] == 7
+
+
+def test_cli_json_digest_includes_digest_payload(monkeypatch, caplog) -> None:
+    caplog.set_level("INFO")
+
+    class _FakeFetcher:
+        def run(self, *, context, source_ids=None):  # noqa: ANN001, ANN202
+            return _empty_fetch()
+
+    class _FakeParser:
+        def run(self, fetch_result):  # noqa: ANN001, ANN202
+            return _empty_parse()
+
+    class _FakeCurator:
+        def run(self, parse_result, *, reference_now, store, config):  # noqa: ANN001, ANN202
+            return _empty_curate()
+
+    monkeypatch.setattr(cli, "Fetcher", _FakeFetcher)
+    monkeypatch.setattr(cli, "Parser", _FakeParser)
+    monkeypatch.setattr(cli, "Curator", _FakeCurator)
+    monkeypatch.setattr("sys.argv", ["berlin-insider", "fetch", "--json", "--digest"])
+
+    cli.main()
+
+    payload = json.loads(caplog.records[-1].message)
+    assert set(payload.keys()) == {"fetch", "parse", "curate", "digest"}
+    assert "Berlin Insider" in payload["digest"]
+
+
+def test_cli_digest_outputs_digest_text(monkeypatch, caplog) -> None:
+    caplog.set_level("INFO")
+
+    class _FakeFetcher:
+        def run(self, *, context, source_ids=None):  # noqa: ANN001, ANN202
+            return _empty_fetch()
+
+    class _FakeParser:
+        def run(self, fetch_result):  # noqa: ANN001, ANN202
+            return _empty_parse()
+
+    class _FakeCurator:
+        def run(self, parse_result, *, reference_now, store, config):  # noqa: ANN001, ANN202
+            return _empty_curate()
+
+    monkeypatch.setattr(cli, "Fetcher", _FakeFetcher)
+    monkeypatch.setattr(cli, "Parser", _FakeParser)
+    monkeypatch.setattr(cli, "Curator", _FakeCurator)
+    monkeypatch.setattr("sys.argv", ["berlin-insider", "fetch", "--digest"])
+
+    cli.main()
+
+    assert "Berlin Insider" in caplog.text
+    assert "Curated total items" not in caplog.text

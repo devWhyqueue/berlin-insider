@@ -19,4 +19,6 @@ uv run berlin-insider fetch --parse-only
 uv run berlin-insider fetch --target-items 10
 uv run berlin-insider fetch --sent-store-path .data/sent_links.json
 uv run berlin-insider fetch --source eventbrite_berlin_weekend
+uv run berlin-insider fetch --digest
+uv run berlin-insider fetch --json --digest
 ```
