@@ -138,3 +138,27 @@ def test_telegram_messenger_registers_webhook_with_certificate(monkeypatch, tmp_
     assert captured["json"] is None
     assert captured["data"] == {"url": "https://example.com/telegram/webhook/secret"}
     assert captured["has_files"] is True
+
+
+def test_telegram_messenger_edits_feedback_message(monkeypatch) -> None:
+    payloads: list[dict[str, object]] = []
+
+    def _fake_post(url, *, json=None, timeout=None):  # noqa: ANN001, ANN202
+        payloads.append({"url": url, "json": json})
+        return httpx.Response(status_code=200, json={"ok": True, "result": True})
+
+    monkeypatch.setattr("berlin_insider.messenger.telegram.httpx.post", _fake_post)
+    messenger = TelegramMessenger(bot_token="token", chat_id="-10001")
+
+    messenger.edit_message_reply_markup(chat_id=-1000, message_id=42)
+    messenger.edit_message_text(chat_id=-1000, message_id=42, text="Updated")
+
+    assert payloads[0]["url"] == "https://api.telegram.org/bottoken/editMessageReplyMarkup"
+    assert payloads[0]["json"] == {"chat_id": "-1000", "message_id": 42, "reply_markup": {}}
+    assert payloads[1]["url"] == "https://api.telegram.org/bottoken/editMessageText"
+    assert payloads[1]["json"] == {
+        "chat_id": "-1000",
+        "message_id": 42,
+        "text": "Updated",
+        "disable_web_page_preview": True,
+    }

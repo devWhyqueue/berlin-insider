@@ -15,6 +15,9 @@ class CallbackAcknowledger(Protocol):
         ...
 
 
+_FEEDBACK_RECEIVED_SUFFIX = "✅ Feedback received"
+
+
 @dataclass(slots=True)
 class FeedbackIngestResult:
     processed_callback: bool
@@ -104,6 +107,7 @@ def _process_callback_query(
     if event is None:
         return _ignore_with_ack(messenger=messenger, callback_id=callback_id)
     feedback_store.upsert(event)
+    _update_feedback_message_ui(messenger=messenger, callback_query=callback_query)
     answered = _ack_if_possible(messenger=messenger, callback_id=callback_id)
     return FeedbackIngestResult(
         processed_callback=True,
@@ -146,3 +150,49 @@ def _event_from_callback(
         voted_at=now_iso,
         updated_at=now_iso,
     )
+
+
+def _update_feedback_message_ui(*, messenger: CallbackAcknowledger, callback_query: dict[str, object]) -> None:
+    message_obj = callback_query.get("message")
+    if not isinstance(message_obj, dict):
+        return
+    message_id = message_obj.get("message_id")
+    chat_obj = message_obj.get("chat")
+    chat_id = chat_obj.get("id") if isinstance(chat_obj, dict) else None
+    if not isinstance(message_id, int) or chat_id is None:
+        return
+    _try_remove_buttons(messenger=messenger, chat_id=chat_id, message_id=message_id)
+    message_text = message_obj.get("text")
+    if not isinstance(message_text, str):
+        return
+    if _FEEDBACK_RECEIVED_SUFFIX in message_text:
+        return
+    updated_text = f"{message_text}\n\n{_FEEDBACK_RECEIVED_SUFFIX}"
+    _try_append_confirmation(
+        messenger=messenger,
+        chat_id=chat_id,
+        message_id=message_id,
+        text=updated_text,
+    )
+
+
+def _try_remove_buttons(*, messenger: CallbackAcknowledger, chat_id: object, message_id: int) -> None:
+    method = getattr(messenger, "edit_message_reply_markup", None)
+    if not callable(method):
+        return
+    try:
+        method(chat_id=chat_id, message_id=message_id)
+    except Exception:  # noqa: BLE001
+        return
+
+
+def _try_append_confirmation(
+    *, messenger: CallbackAcknowledger, chat_id: object, message_id: int, text: str
+) -> None:
+    method = getattr(messenger, "edit_message_text", None)
+    if not callable(method):
+        return
+    try:
+        method(chat_id=chat_id, message_id=message_id, text=text)
+    except Exception:  # noqa: BLE001
+        return

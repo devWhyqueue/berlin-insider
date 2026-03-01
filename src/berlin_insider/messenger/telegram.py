@@ -79,6 +79,25 @@ class TelegramMessenger:
         """Acknowledge callback query events."""
         self._post_api("answerCallbackQuery", payload={"callback_query_id": callback_query_id})
 
+    def edit_message_reply_markup(self, *, chat_id: int | str, message_id: int) -> None:
+        """Remove inline keyboard after feedback is recorded."""
+        self._post_api(
+            "editMessageReplyMarkup",
+            payload={"chat_id": str(chat_id), "message_id": message_id, "reply_markup": {}},
+        )
+
+    def edit_message_text(self, *, chat_id: int | str, message_id: int, text: str) -> None:
+        """Edit a message body with plain text confirmation suffix."""
+        self._post_api(
+            "editMessageText",
+            payload={
+                "chat_id": str(chat_id),
+                "message_id": message_id,
+                "text": text,
+                "disable_web_page_preview": True,
+            },
+        )
+
     def set_webhook(self, *, url: str, certificate_path: Path | None = None) -> None:
         """Configure Telegram webhook endpoint for this bot."""
         if certificate_path is None:

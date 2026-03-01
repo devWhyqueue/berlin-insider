@@ -13,9 +13,17 @@ from berlin_insider.feedback.webhook import WebhookDependencies, create_webhook_
 class _FakeMessenger:
     def __init__(self) -> None:
         self.answered: list[str] = []
+        self.reply_markup_clears: list[tuple[object, int]] = []
+        self.text_updates: list[tuple[object, int, str]] = []
 
     def answer_callback_query(self, *, callback_query_id: str) -> None:
         self.answered.append(callback_query_id)
+
+    def edit_message_reply_markup(self, *, chat_id: object, message_id: int) -> None:
+        self.reply_markup_clears.append((chat_id, message_id))
+
+    def edit_message_text(self, *, chat_id: object, message_id: int, text: str) -> None:
+        self.text_updates.append((chat_id, message_id, text))
 
 
 def _make_update(*, callback_data: str, callback_id: str = "cb-1") -> dict[str, object]:
@@ -25,7 +33,7 @@ def _make_update(*, callback_data: str, callback_id: str = "cb-1") -> dict[str, 
             "id": callback_id,
             "data": callback_data,
             "from": {"id": 123},
-            "message": {"message_id": 42, "chat": {"id": -1000}},
+            "message": {"message_id": 42, "chat": {"id": -1000}, "text": "Berlin Insider Digest"},
         },
     }
 
@@ -63,6 +71,9 @@ def test_webhook_persists_feedback_and_acks(tmp_path: Path) -> None:
     assert response.status_code == 200
     assert feedback_store.count() == 1
     assert messenger.answered == ["cb-1"]
+    assert messenger.reply_markup_clears == [(-1000, 42)]
+    assert messenger.text_updates
+    assert messenger.text_updates[0][2].endswith("✅ Feedback received")
 
 
 def test_webhook_unknown_message_key_is_ignored_but_acked(tmp_path: Path) -> None:
@@ -103,4 +114,3 @@ def test_webhook_rejects_invalid_secret(tmp_path: Path) -> None:
     response = client.post("/telegram/webhook/wrong", json={"update_id": 1})
 
     assert response.status_code == 404
-

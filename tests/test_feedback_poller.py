@@ -16,12 +16,20 @@ class _FakeMessenger:
     def __init__(self, updates: list[dict[str, object]]) -> None:
         self._updates = updates
         self.answered: list[str] = []
+        self.reply_markup_clears: list[tuple[object, int]] = []
+        self.text_updates: list[tuple[object, int, str]] = []
 
     def get_updates(self, *, offset: int | None = None, timeout_seconds: int = 0) -> list[dict[str, object]]:  # noqa: ARG002
         return self._updates
 
     def answer_callback_query(self, *, callback_query_id: str) -> None:
         self.answered.append(callback_query_id)
+
+    def edit_message_reply_markup(self, *, chat_id: object, message_id: int) -> None:
+        self.reply_markup_clears.append((chat_id, message_id))
+
+    def edit_message_text(self, *, chat_id: object, message_id: int, text: str) -> None:
+        self.text_updates.append((chat_id, message_id, text))
 
 
 def test_feedback_poller_persists_and_deduplicates_votes(tmp_path: Path) -> None:
@@ -44,7 +52,7 @@ def test_feedback_poller_persists_and_deduplicates_votes(tmp_path: Path) -> None
                 "id": "cb1",
                 "data": "fb:v1:daily:daily-2026-02-23-abc:up",
                 "from": {"id": 1},
-                "message": {"message_id": 42, "chat": {"id": -1000}},
+                "message": {"message_id": 42, "chat": {"id": -1000}, "text": "Berlin Insider"},
             },
         },
         {
@@ -53,7 +61,7 @@ def test_feedback_poller_persists_and_deduplicates_votes(tmp_path: Path) -> None
                 "id": "cb2",
                 "data": "fb:v1:daily:daily-2026-02-23-abc:down",
                 "from": {"id": 1},
-                "message": {"message_id": 42, "chat": {"id": -1000}},
+                "message": {"message_id": 42, "chat": {"id": -1000}, "text": "Berlin Insider"},
             },
         },
     ]
@@ -71,6 +79,8 @@ def test_feedback_poller_persists_and_deduplicates_votes(tmp_path: Path) -> None
     assert result.answered_callbacks == 2
     assert feedback_store.count() == 1
     assert state_store.load().last_update_id == 101
+    assert messenger.reply_markup_clears == [(-1000, 42), (-1000, 42)]
+    assert len(messenger.text_updates) == 2
 
 
 def test_feedback_poller_ignores_non_feedback_callbacks(tmp_path: Path) -> None:
