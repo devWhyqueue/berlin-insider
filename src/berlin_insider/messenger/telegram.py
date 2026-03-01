@@ -98,12 +98,19 @@ class TelegramMessenger:
             },
         )
 
-    def set_webhook(self, *, url: str, certificate_path: Path | None = None) -> None:
+    def set_webhook(
+        self, *, url: str, certificate_path: Path | None = None, ip_address: str | None = None
+    ) -> None:
         """Configure Telegram webhook endpoint for this bot."""
+        payload: dict[str, object] = {"url": url}
+        if ip_address:
+            payload["ip_address"] = ip_address
         if certificate_path is None:
-            response = self._post_api("setWebhook", payload={"url": url})
+            response = self._post_api("setWebhook", payload=payload)
         else:
-            response = self._post_webhook_with_cert(url=url, certificate_path=certificate_path)
+            response = self._post_webhook_with_cert(
+                url=url, certificate_path=certificate_path, ip_address=ip_address
+            )
         payload_obj = _json_payload(response)
         if payload_obj.get("ok") is not True:
             description = payload_obj.get("description")
@@ -131,15 +138,20 @@ class TelegramMessenger:
         _validate_http_status(response)
         return response
 
-    def _post_webhook_with_cert(self, *, url: str, certificate_path: Path) -> httpx.Response:
+    def _post_webhook_with_cert(
+        self, *, url: str, certificate_path: Path, ip_address: str | None = None
+    ) -> httpx.Response:
         endpoint = self._api_url("setWebhook")
         if not certificate_path.exists():
             raise MessengerError(f"telegram webhook certificate not found: {certificate_path}")
+        data: dict[str, str] = {"url": url}
+        if ip_address:
+            data["ip_address"] = ip_address
         try:
             with certificate_path.open("rb") as cert_file:
                 response = httpx.post(
                     endpoint,
-                    data={"url": url},
+                    data=data,
                     files={"certificate": (certificate_path.name, cert_file)},
                     timeout=self._timeout_seconds,
                 )

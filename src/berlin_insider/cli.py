@@ -103,6 +103,7 @@ def _run_worker_command(args) -> None:  # noqa: ANN001
             telegram_webhook_cert_path=(
                 Path(args.telegram_webhook_cert_path) if args.telegram_webhook_cert_path else None
             ),
+            telegram_webhook_ip=args.telegram_webhook_ip,
         )
     ).run()
 

@@ -10,10 +10,12 @@ class _FakeMessenger:
     def __init__(self) -> None:
         self.webhook_urls: list[str] = []
         self.webhook_cert_paths: list[object] = []
+        self.webhook_ips: list[object] = []
 
-    def set_webhook(self, *, url: str, certificate_path=None) -> None:  # noqa: ANN001
+    def set_webhook(self, *, url: str, certificate_path=None, ip_address=None) -> None:  # noqa: ANN001
         self.webhook_urls.append(url)
         self.webhook_cert_paths.append(certificate_path)
+        self.webhook_ips.append(ip_address)
 
     def send_digest(self, *, text: str, feedback_metadata=None):  # noqa: ANN001, ANN201
         raise AssertionError("send_digest should not be called in this test")
@@ -89,6 +91,7 @@ def test_worker_registers_webhook_and_runs_startup_cycle(monkeypatch, tmp_path: 
 
     assert fake_messenger.webhook_urls == ["https://example.com/telegram/webhook/secret123"]
     assert fake_messenger.webhook_cert_paths == [cert_path]
+    assert fake_messenger.webhook_ips == [None]
     assert len(fake_scheduler.calls) == 1
     assert fake_scheduler.calls[0]["force"] is False
     assert fake_bg.started is True
@@ -156,3 +159,33 @@ def test_build_scheduler_creates_daily_and_weekend_jobs(tmp_path: Path) -> None:
 
     assert len(jobs) == 2
     assert {job.id for job in jobs} == {"daily-digest", "weekend-digest"}
+
+
+def test_worker_passes_configured_webhook_ip(monkeypatch, tmp_path: Path) -> None:
+    fake_bg = _FakeBackgroundScheduler()
+
+    def _fake_build_scheduler(**kwargs):  # noqa: ANN003, ANN202
+        return fake_bg
+
+    monkeypatch.setattr(worker_module, "_build_scheduler", _fake_build_scheduler)
+    monkeypatch.setattr(worker_module.uvicorn, "run", lambda *args, **kwargs: None)
+    fake_scheduler = _FakeScheduler()
+    fake_messenger = _FakeMessenger()
+    worker = worker_module.Worker(
+        config=worker_module.WorkerConfig(
+            db_path=tmp_path / "berlin_insider.db",
+            target_items=7,
+            schedule=ScheduleConfig(timezone="UTC"),
+            host="127.0.0.1",
+            port=8080,
+            webhook_public_base_url="https://example.com",
+            telegram_webhook_secret="secret123",
+            telegram_webhook_ip="203.0.113.10",
+        ),
+        scheduler=fake_scheduler,  # type: ignore[arg-type]
+        messenger=fake_messenger,  # type: ignore[arg-type]
+    )
+
+    worker.run()
+
+    assert fake_messenger.webhook_ips == ["203.0.113.10"]

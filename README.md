@@ -42,6 +42,7 @@ Required environment variables:
 Optional:
 
 - `TELEGRAM_API_BASE` (default: `https://api.telegram.org`)
+- `TELEGRAM_WEBHOOK_IP` (optional static IP passed to Telegram `setWebhook` to avoid stale DNS resolution)
 - `OPENAI_API_KEY` (enables one-sentence `gpt-5-mini` summaries for parsed items/digests)
 - `WORKER_HOST` (default: `0.0.0.0`)
 - `WORKER_PORT` (default: `8080`)
@@ -82,7 +83,39 @@ uv sync --all-groups
 uv run playwright install --with-deps chromium
 ```
 
-3. Create systemd service (`/etc/systemd/system/berlin-insider-worker.service`):
+3. Webhook/TLS checklist (required for Telegram callbacks):
+
+- Use a public DNS name (for example `bot.example.com`) that points to the VM.
+- Open inbound TCP `80` and `443` in cloud/network firewall.
+- Ensure a reverse proxy serves `https://<your-domain>` on `443` and forwards to `http://127.0.0.1:8080`.
+- If another service already owns `80/443` (for example Pi-hole), move that service to different web ports first.
+- Set `WEBHOOK_PUBLIC_BASE_URL=https://<your-domain>` in `.env`.
+- If you use a self-signed certificate, set `TELEGRAM_WEBHOOK_CERT_PATH` to that cert file (default: `/etc/nginx/ssl/berlin-insider.crt`).
+
+Minimal nginx site example (HTTP redirect + HTTPS reverse proxy):
+
+```nginx
+server {
+    listen 80;
+    server_name <your-domain>;
+    return 301 https://$host$request_uri;
+}
+
+server {
+    listen 443 ssl;
+    server_name <your-domain>;
+    ssl_certificate /etc/nginx/ssl/berlin-insider.crt;
+    ssl_certificate_key /etc/nginx/ssl/berlin-insider.key;
+    location / {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+```
+
+4. Create systemd service (`/etc/systemd/system/berlin-insider-worker.service`):
 
 ```ini
 [Unit]
@@ -99,18 +132,26 @@ Restart=always
 RestartSec=5
 ```
 
-4. Enable service:
+5. Enable service:
 
 ```bash
 sudo systemctl daemon-reload
 sudo systemctl enable --now berlin-insider-worker.service
 ```
 
-5. Verify:
+6. Verify:
 
 ```bash
 systemctl status berlin-insider-worker.service
 journalctl -u berlin-insider-worker.service -n 100 --no-pager
+```
+
+Also verify Telegram webhook registration:
+
+```bash
+cd ~/berlin-insider
+TOKEN=$(grep '^TELEGRAM_BOT_TOKEN=' .env | cut -d= -f2- | tr -d '\r')
+curl -s "https://api.telegram.org/bot${TOKEN}/getWebhookInfo"
 ```
 
 ## Troubleshooting

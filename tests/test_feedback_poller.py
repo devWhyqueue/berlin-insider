@@ -80,7 +80,7 @@ def test_feedback_poller_persists_and_deduplicates_votes(tmp_path: Path) -> None
     assert feedback_store.count() == 1
     assert state_store.load().last_update_id == 101
     assert messenger.reply_markup_clears == [(-1000, 42), (-1000, 42)]
-    assert len(messenger.text_updates) == 2
+    assert messenger.text_updates == []
 
 
 def test_feedback_poller_ignores_non_feedback_callbacks(tmp_path: Path) -> None:

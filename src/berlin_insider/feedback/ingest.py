@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Protocol
@@ -8,14 +9,13 @@ from berlin_insider.digest import DigestKind
 from berlin_insider.feedback.models import FeedbackEvent, FeedbackVote
 from berlin_insider.feedback.store import SqliteFeedbackStore, SqliteSentMessageStore
 
+logger = logging.getLogger(__name__)
+
 
 class CallbackAcknowledger(Protocol):
     def answer_callback_query(self, *, callback_query_id: str) -> None:
         """Acknowledge callback query events."""
         ...
-
-
-_FEEDBACK_RECEIVED_SUFFIX = "✅ Feedback received"
 
 
 @dataclass(slots=True)
@@ -120,7 +120,11 @@ def _process_callback_query(
 def _ack_if_possible(*, messenger: CallbackAcknowledger, callback_id: object) -> bool:
     if not isinstance(callback_id, str):
         return False
-    messenger.answer_callback_query(callback_query_id=callback_id)
+    try:
+        messenger.answer_callback_query(callback_query_id=callback_id)
+    except Exception:  # noqa: BLE001
+        logger.warning("Failed to acknowledge callback query id=%s", callback_id)
+        return False
     return True
 
 
@@ -162,18 +166,6 @@ def _update_feedback_message_ui(*, messenger: CallbackAcknowledger, callback_que
     if not isinstance(message_id, int) or chat_id is None:
         return
     _try_remove_buttons(messenger=messenger, chat_id=chat_id, message_id=message_id)
-    message_text = message_obj.get("text")
-    if not isinstance(message_text, str):
-        return
-    if _FEEDBACK_RECEIVED_SUFFIX in message_text:
-        return
-    updated_text = f"{message_text}\n\n{_FEEDBACK_RECEIVED_SUFFIX}"
-    _try_append_confirmation(
-        messenger=messenger,
-        chat_id=chat_id,
-        message_id=message_id,
-        text=updated_text,
-    )
 
 
 def _try_remove_buttons(*, messenger: CallbackAcknowledger, chat_id: object, message_id: int) -> None:
@@ -182,17 +174,5 @@ def _try_remove_buttons(*, messenger: CallbackAcknowledger, chat_id: object, mes
         return
     try:
         method(chat_id=chat_id, message_id=message_id)
-    except Exception:  # noqa: BLE001
-        return
-
-
-def _try_append_confirmation(
-    *, messenger: CallbackAcknowledger, chat_id: object, message_id: int, text: str
-) -> None:
-    method = getattr(messenger, "edit_message_text", None)
-    if not callable(method):
-        return
-    try:
-        method(chat_id=chat_id, message_id=message_id, text=text)
     except Exception:  # noqa: BLE001
         return

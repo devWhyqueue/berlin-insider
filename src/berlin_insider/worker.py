@@ -30,6 +30,7 @@ class WorkerConfig:
     webhook_public_base_url: str
     telegram_webhook_secret: str
     telegram_webhook_cert_path: Path | None = None
+    telegram_webhook_ip: str | None = None
 
 
 @dataclass(slots=True)
@@ -96,7 +97,11 @@ class Worker:
             secret=self._config.telegram_webhook_secret,
         )
         cert_path = _resolve_webhook_cert_path(self._config.telegram_webhook_cert_path)
-        self._messenger.set_webhook(url=webhook_url, certificate_path=cert_path)
+        self._messenger.set_webhook(
+            url=webhook_url,
+            certificate_path=cert_path,
+            ip_address=self._config.telegram_webhook_ip,
+        )
         if cert_path is None:
             logger.info("Registered Telegram webhook: %s", webhook_url)
             return

@@ -141,3 +141,8 @@ def _add_worker_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser])
         default=os.getenv("TELEGRAM_WEBHOOK_CERT_PATH", "/etc/nginx/ssl/berlin-insider.crt"),
         help="Certificate path uploaded to Telegram for self-signed webhook TLS",
     )
+    worker.add_argument(
+        "--telegram-webhook-ip",
+        default=os.getenv("TELEGRAM_WEBHOOK_IP"),
+        help="Optional static IP for Telegram webhook delivery to avoid stale DNS resolution",
+    )

@@ -44,6 +44,7 @@ def test_cli_worker_runs_with_config(monkeypatch) -> None:
     assert cfg.telegram_webhook_secret == "secret123"
     assert cfg.port == 9090
     assert cfg.telegram_webhook_cert_path == Path("/etc/nginx/ssl/berlin-insider.crt")
+    assert cfg.telegram_webhook_ip is None
 
 
 def test_cli_worker_requires_webhook_base_url(monkeypatch) -> None:
@@ -66,3 +67,36 @@ def test_cli_worker_requires_webhook_secret(monkeypatch) -> None:
     )
     with pytest.raises(SystemExit, match="TELEGRAM_WEBHOOK_SECRET"):
         cli.main()
+
+
+def test_cli_worker_accepts_webhook_ip(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    class _FakeWorker:
+        def __init__(self, *, config):  # noqa: ANN001
+            captured["config"] = config
+
+        def run(self) -> None:
+            captured["run_called"] = True
+
+    monkeypatch.setattr(cli, "Worker", _FakeWorker)
+    monkeypatch.setattr(cli, "_load_dotenv_defaults", lambda path=None: None)
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "berlin-insider",
+            "worker",
+            "--webhook-public-base-url",
+            "https://example.com",
+            "--telegram-webhook-secret",
+            "secret123",
+            "--telegram-webhook-ip",
+            "203.0.113.10",
+        ],
+    )
+
+    cli.main()
+
+    assert captured["run_called"] is True
+    cfg = captured["config"]
+    assert cfg.telegram_webhook_ip == "203.0.113.10"

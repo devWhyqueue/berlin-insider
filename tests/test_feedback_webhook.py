@@ -11,12 +11,15 @@ from berlin_insider.feedback.webhook import WebhookDependencies, create_webhook_
 
 
 class _FakeMessenger:
-    def __init__(self) -> None:
+    def __init__(self, *, fail_answer: bool = False) -> None:
         self.answered: list[str] = []
         self.reply_markup_clears: list[tuple[object, int]] = []
         self.text_updates: list[tuple[object, int, str]] = []
+        self._fail_answer = fail_answer
 
     def answer_callback_query(self, *, callback_query_id: str) -> None:
+        if self._fail_answer:
+            raise RuntimeError("answer failed")
         self.answered.append(callback_query_id)
 
     def edit_message_reply_markup(self, *, chat_id: object, message_id: int) -> None:
@@ -72,8 +75,7 @@ def test_webhook_persists_feedback_and_acks(tmp_path: Path) -> None:
     assert feedback_store.count() == 1
     assert messenger.answered == ["cb-1"]
     assert messenger.reply_markup_clears == [(-1000, 42)]
-    assert messenger.text_updates
-    assert messenger.text_updates[0][2].endswith("✅ Feedback received")
+    assert messenger.text_updates == []
 
 
 def test_webhook_unknown_message_key_is_ignored_but_acked(tmp_path: Path) -> None:
@@ -114,3 +116,36 @@ def test_webhook_rejects_invalid_secret(tmp_path: Path) -> None:
     response = client.post("/telegram/webhook/wrong", json={"update_id": 1})
 
     assert response.status_code == 404
+
+
+def test_webhook_stale_callback_ack_error_does_not_fail_request(tmp_path: Path) -> None:
+    db_path = tmp_path / "berlin_insider.db"
+    sent_store = SqliteSentMessageStore(db_path)
+    sent_store.upsert(
+        SentMessageRecord(
+            message_key="daily-2026-02-28-abc",
+            digest_kind=DigestKind.DAILY,
+            local_date="2026-02-28",
+            sent_at="2026-02-28T08:00:00+00:00",
+            telegram_message_id="42",
+            selected_urls=["https://example.com/a"],
+        )
+    )
+    feedback_store = SqliteFeedbackStore(db_path)
+    messenger = _FakeMessenger(fail_answer=True)
+    app = create_webhook_app(
+        deps=WebhookDependencies(
+            messenger=messenger,  # type: ignore[arg-type]
+            feedback_store=feedback_store,
+            sent_message_store=sent_store,
+            secret="secret123",
+        )
+    )
+    client = TestClient(app)
+    response = client.post(
+        "/telegram/webhook/secret123",
+        json=_make_update(callback_data="fb:v1:daily:daily-2026-02-28-abc:up"),
+    )
+
+    assert response.status_code == 200
+    assert feedback_store.count() == 1
