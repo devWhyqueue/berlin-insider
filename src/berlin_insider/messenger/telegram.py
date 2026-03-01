@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 from collections.abc import Mapping
 from datetime import UTC, datetime
+from pathlib import Path
 
 import httpx
 
@@ -78,9 +79,12 @@ class TelegramMessenger:
         """Acknowledge callback query events."""
         self._post_api("answerCallbackQuery", payload={"callback_query_id": callback_query_id})
 
-    def set_webhook(self, *, url: str) -> None:
+    def set_webhook(self, *, url: str, certificate_path: Path | None = None) -> None:
         """Configure Telegram webhook endpoint for this bot."""
-        response = self._post_api("setWebhook", payload={"url": url})
+        if certificate_path is None:
+            response = self._post_api("setWebhook", payload={"url": url})
+        else:
+            response = self._post_webhook_with_cert(url=url, certificate_path=certificate_path)
         payload_obj = _json_payload(response)
         if payload_obj.get("ok") is not True:
             description = payload_obj.get("description")
@@ -98,9 +102,7 @@ class TelegramMessenger:
         return self._post_api("sendMessage", payload=payload)
 
     def _post_api(self, method: str, *, payload: dict[str, object]) -> httpx.Response:
-        url = f"{self._api_base}/bot{self._bot_token}/sendMessage"
-        if method != "sendMessage":
-            url = f"{self._api_base}/bot{self._bot_token}/{method}"
+        url = self._api_url(method)
         try:
             response = httpx.post(url, json=payload, timeout=self._timeout_seconds)
         except (
@@ -109,6 +111,28 @@ class TelegramMessenger:
             raise MessengerError(f"telegram request failed: {exc}") from exc
         _validate_http_status(response)
         return response
+
+    def _post_webhook_with_cert(self, *, url: str, certificate_path: Path) -> httpx.Response:
+        endpoint = self._api_url("setWebhook")
+        if not certificate_path.exists():
+            raise MessengerError(f"telegram webhook certificate not found: {certificate_path}")
+        try:
+            with certificate_path.open("rb") as cert_file:
+                response = httpx.post(
+                    endpoint,
+                    data={"url": url},
+                    files={"certificate": (certificate_path.name, cert_file)},
+                    timeout=self._timeout_seconds,
+                )
+        except OSError as exc:
+            raise MessengerError(f"telegram webhook certificate read failed: {exc}") from exc
+        except httpx.HTTPError as exc:
+            raise MessengerError(f"telegram request failed: {exc}") from exc
+        _validate_http_status(response)
+        return response
+
+    def _api_url(self, method: str) -> str:
+        return f"{self._api_base}/bot{self._bot_token}/{method}"
 
 
 def _send_message_payload(

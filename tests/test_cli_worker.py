@@ -18,6 +18,7 @@ def test_cli_worker_runs_with_config(monkeypatch) -> None:
             captured["run_called"] = True
 
     monkeypatch.setattr(cli, "Worker", _FakeWorker)
+    monkeypatch.setattr(cli, "_load_dotenv_defaults", lambda path=None: None)
     monkeypatch.setattr(
         "sys.argv",
         [
@@ -42,9 +43,12 @@ def test_cli_worker_runs_with_config(monkeypatch) -> None:
     assert cfg.webhook_public_base_url == "https://example.com"
     assert cfg.telegram_webhook_secret == "secret123"
     assert cfg.port == 9090
+    assert cfg.telegram_webhook_cert_path == Path("/etc/nginx/ssl/berlin-insider.crt")
 
 
 def test_cli_worker_requires_webhook_base_url(monkeypatch) -> None:
+    monkeypatch.setattr(cli, "_load_dotenv_defaults", lambda path=None: None)
+    monkeypatch.delenv("WEBHOOK_PUBLIC_BASE_URL", raising=False)
     monkeypatch.setattr(
         "sys.argv",
         ["berlin-insider", "worker", "--telegram-webhook-secret", "secret123"],
@@ -54,10 +58,11 @@ def test_cli_worker_requires_webhook_base_url(monkeypatch) -> None:
 
 
 def test_cli_worker_requires_webhook_secret(monkeypatch) -> None:
+    monkeypatch.setattr(cli, "_load_dotenv_defaults", lambda path=None: None)
+    monkeypatch.delenv("TELEGRAM_WEBHOOK_SECRET", raising=False)
     monkeypatch.setattr(
         "sys.argv",
         ["berlin-insider", "worker", "--webhook-public-base-url", "https://example.com"],
     )
     with pytest.raises(SystemExit, match="TELEGRAM_WEBHOOK_SECRET"):
         cli.main()
-

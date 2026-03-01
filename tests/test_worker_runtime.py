@@ -9,9 +9,11 @@ from berlin_insider.scheduler.models import ScheduleConfig, SchedulerState, Sche
 class _FakeMessenger:
     def __init__(self) -> None:
         self.webhook_urls: list[str] = []
+        self.webhook_cert_paths: list[object] = []
 
-    def set_webhook(self, *, url: str) -> None:
+    def set_webhook(self, *, url: str, certificate_path=None) -> None:  # noqa: ANN001
         self.webhook_urls.append(url)
+        self.webhook_cert_paths.append(certificate_path)
 
     def send_digest(self, *, text: str, feedback_metadata=None):  # noqa: ANN001, ANN201
         raise AssertionError("send_digest should not be called in this test")
@@ -58,6 +60,8 @@ class _FakeBackgroundScheduler:
 
 def test_worker_registers_webhook_and_runs_startup_cycle(monkeypatch, tmp_path: Path) -> None:
     fake_bg = _FakeBackgroundScheduler()
+    cert_path = tmp_path / "webhook.crt"
+    cert_path.write_text("dummy", encoding="utf-8")
 
     def _fake_build_scheduler(**kwargs):  # noqa: ANN003, ANN202
         return fake_bg
@@ -75,6 +79,7 @@ def test_worker_registers_webhook_and_runs_startup_cycle(monkeypatch, tmp_path: 
             port=8080,
             webhook_public_base_url="https://example.com",
             telegram_webhook_secret="secret123",
+            telegram_webhook_cert_path=cert_path,
         ),
         scheduler=fake_scheduler,  # type: ignore[arg-type]
         messenger=fake_messenger,  # type: ignore[arg-type]
@@ -83,6 +88,7 @@ def test_worker_registers_webhook_and_runs_startup_cycle(monkeypatch, tmp_path: 
     worker.run()
 
     assert fake_messenger.webhook_urls == ["https://example.com/telegram/webhook/secret123"]
+    assert fake_messenger.webhook_cert_paths == [cert_path]
     assert len(fake_scheduler.calls) == 1
     assert fake_scheduler.calls[0]["force"] is False
     assert fake_bg.started is True

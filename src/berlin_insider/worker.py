@@ -29,6 +29,7 @@ class WorkerConfig:
     port: int
     webhook_public_base_url: str
     telegram_webhook_secret: str
+    telegram_webhook_cert_path: Path | None = None
 
 
 @dataclass(slots=True)
@@ -94,8 +95,12 @@ class Worker:
             base_url=self._config.webhook_public_base_url,
             secret=self._config.telegram_webhook_secret,
         )
-        self._messenger.set_webhook(url=webhook_url)
-        logger.info("Registered Telegram webhook: %s", webhook_url)
+        cert_path = _resolve_webhook_cert_path(self._config.telegram_webhook_cert_path)
+        self._messenger.set_webhook(url=webhook_url, certificate_path=cert_path)
+        if cert_path is None:
+            logger.info("Registered Telegram webhook: %s", webhook_url)
+            return
+        logger.info("Registered Telegram webhook with certificate: %s (cert=%s)", webhook_url, cert_path)
 
     def _try_run_cycle(
         self,
@@ -199,3 +204,15 @@ def _weekday_to_cron_alias(weekday: str) -> str | None:
 
 def _build_webhook_url(*, base_url: str, secret: str) -> str:
     return f"{base_url.rstrip('/')}/telegram/webhook/{secret}"
+
+
+def _resolve_webhook_cert_path(configured_path: Path | None) -> Path | None:
+    if configured_path is not None:
+        if configured_path.exists():
+            return configured_path
+        logger.warning("Webhook cert path does not exist, skipping custom cert: %s", configured_path)
+        return None
+    default_path = Path("/etc/nginx/ssl/berlin-insider.crt")
+    if default_path.exists():
+        return default_path
+    return None

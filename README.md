@@ -50,6 +50,7 @@ Optional:
 - `WORKER_WEEKEND_WEEKDAY` / `WORKER_WEEKEND_HOUR` / `WORKER_WEEKEND_MINUTE`
 - `WORKER_DB_PATH` (default: `.data/berlin_insider.db`)
 - `WORKER_TARGET_ITEMS` (default: `7`)
+- `TELEGRAM_WEBHOOK_CERT_PATH` (default: `/etc/nginx/ssl/berlin-insider.crt`)
 
 When `OPENAI_API_KEY` is missing or summary generation fails for an item, the pipeline still runs
 and sends digests; that item is shown without a summary line.
@@ -139,37 +140,3 @@ Default schedule behavior:
 - `DAILY` digest: every other day at 08:00 (`Europe/Berlin`)
 
 If you miss a message, the JSON output and logs usually explain why in fields like `due`, `reason`, `status`, and `delivered`.
-
-If OpenAI summaries fail with `401`:
-
-1. Confirm the key is loaded in the same shell/process:
-
-```bash
-cd ~/berlin-insider
-~/.local/bin/uv run python -c "import berlin_insider.cli as c, os; c._load_dotenv_defaults(); k=os.getenv('OPENAI_API_KEY',''); print('loaded=', bool(k), 'prefix=', k[:12])"
-```
-
-2. Run an opt-in live OpenAI smoke test:
-
-```bash
-cd ~/berlin-insider
-RUN_LIVE_OPENAI_TESTS=1 ~/.local/bin/uv run pytest tests/test_parser_summarizer.py -k live_openai_summary_smoke -q
-```
-
-3. If it still returns `401`, rotate the key in OpenAI dashboard and update `.env`.
-
-## Feedback webhook
-
-The worker registers Telegram webhook delivery on startup and accepts callback updates at:
-
-`POST /telegram/webhook/{TELEGRAM_WEBHOOK_SECRET}`
-
-## Persisted Data
-
-SQLite persistence in `.data/berlin_insider.db` includes:
-
-- operational scheduler/delivery state,
-- sent-link dedupe history,
-- sent message metadata and feedback votes,
-- source website registry (`source_websites`),
-- parsed run snapshots (`parse_runs`, `parsed_items`).

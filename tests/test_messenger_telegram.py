@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import httpx
 import pytest
 
@@ -111,3 +113,28 @@ def test_telegram_messenger_registers_webhook(monkeypatch) -> None:
 
     assert captured["url"] == "https://api.telegram.org/bottoken/setWebhook"
     assert captured["json"] == {"url": "https://example.com/telegram/webhook/secret"}
+
+
+def test_telegram_messenger_registers_webhook_with_certificate(monkeypatch, tmp_path: Path) -> None:
+    cert_path = tmp_path / "webhook.crt"
+    cert_path.write_text("dummy-cert", encoding="utf-8")
+    captured: dict[str, object] = {}
+
+    def _fake_post(url, *, json=None, data=None, files=None, timeout=None):  # noqa: ANN001, ANN202
+        captured["url"] = url
+        captured["json"] = json
+        captured["data"] = data
+        captured["has_files"] = files is not None
+        return httpx.Response(status_code=200, json={"ok": True, "result": True})
+
+    monkeypatch.setattr("berlin_insider.messenger.telegram.httpx.post", _fake_post)
+    messenger = TelegramMessenger(bot_token="token", chat_id="-10001")
+
+    messenger.set_webhook(
+        url="https://example.com/telegram/webhook/secret", certificate_path=cert_path
+    )
+
+    assert captured["url"] == "https://api.telegram.org/bottoken/setWebhook"
+    assert captured["json"] is None
+    assert captured["data"] == {"url": "https://example.com/telegram/webhook/secret"}
+    assert captured["has_files"] is True

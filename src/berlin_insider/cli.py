@@ -100,6 +100,9 @@ def _run_worker_command(args) -> None:  # noqa: ANN001
             port=args.port,
             webhook_public_base_url=args.webhook_public_base_url,
             telegram_webhook_secret=args.telegram_webhook_secret,
+            telegram_webhook_cert_path=(
+                Path(args.telegram_webhook_cert_path) if args.telegram_webhook_cert_path else None
+            ),
         )
     ).run()
 

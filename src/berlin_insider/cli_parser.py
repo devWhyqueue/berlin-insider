@@ -136,3 +136,8 @@ def _add_worker_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser])
         default=os.getenv("TELEGRAM_WEBHOOK_SECRET"),
         help="Secret token embedded in webhook path",
     )
+    worker.add_argument(
+        "--telegram-webhook-cert-path",
+        default=os.getenv("TELEGRAM_WEBHOOK_CERT_PATH", "/etc/nginx/ssl/berlin-insider.crt"),
+        help="Certificate path uploaded to Telegram for self-signed webhook TLS",
+    )
