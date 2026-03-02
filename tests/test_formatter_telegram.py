@@ -50,7 +50,7 @@ def _curate_result(items: list[CuratedItem], *, warnings: list[str] | None = Non
     )
 
 
-def test_formatter_groups_by_category_and_formats_dates() -> None:
+def test_formatter_groups_by_category_without_item_dates() -> None:
     nightlife = CuratedItem(
         item=_parsed_item(
             title="Late Rave",
@@ -85,10 +85,10 @@ def test_formatter_groups_by_category_and_formats_dates() -> None:
         config=DigestFormatConfig(timezone="UTC"),
     )
 
-    assert "Berlin Insider" in text
+    assert "Berlin Insider \\| Weekend Picks" in text
     assert text.index("*Event*") < text.index("*Food*") < text.index("*Nightlife*")
-    assert "Sat 28 Feb 18:30" in text
-    assert "Sun 01 Mar" in text
+    assert "Sat 28 Feb" not in text
+    assert "Sun 01 Mar" not in text
 
 
 def test_formatter_emits_fallback_note_when_too_few_items() -> None:
@@ -158,7 +158,8 @@ def test_formatter_renders_daily_tip() -> None:
         digest_kind=DigestKind.DAILY,
         config=DigestFormatConfig(timezone="UTC"),
     )
-    assert "Tip of the Day" in text
+    assert "Berlin Insider \\| Tip of the Day" in text
+    assert "Tip of the Day \\(" not in text
     assert "Daily Pick" in text
     assert "One\\-sentence daily summary\\." in text
 

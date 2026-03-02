@@ -167,7 +167,31 @@ def test_curator_daily_selects_single_same_day_item() -> None:
     assert result.selected_items[0].item.item_url == "https://example.com/today"
 
 
-def test_curator_daily_falls_back_to_upcoming() -> None:
+def test_curator_daily_accepts_unlikely_same_day_item() -> None:
+    parse = _parse_result(
+        [
+            _parsed_item(
+                "https://example.com/today-unlikely",
+                weekend=WeekendRelevance.UNLIKELY,
+                start=datetime(2026, 2, 23, 12, 0, tzinfo=UTC),
+            ),
+            _parsed_item(
+                "https://example.com/tomorrow-likely",
+                start=datetime(2026, 2, 24, 12, 0, tzinfo=UTC),
+            ),
+        ]
+    )
+    result = Curator().run(
+        parse,
+        reference_now=datetime(2026, 2, 23, 8, 0, tzinfo=UTC),
+        store=NoOpSentItemStore(),
+        config=CuratorConfig(target_count=1, digest_kind=DigestKind.DAILY),
+    )
+    assert result.actual_count == 1
+    assert result.selected_items[0].item.item_url == "https://example.com/today-unlikely"
+
+
+def test_curator_daily_returns_empty_when_only_upcoming_items_exist() -> None:
     parse = _parse_result(
         [
             _parsed_item(
@@ -186,6 +210,6 @@ def test_curator_daily_falls_back_to_upcoming() -> None:
         store=NoOpSentItemStore(),
         config=CuratorConfig(target_count=1, digest_kind=DigestKind.DAILY),
     )
-    assert result.actual_count == 1
-    assert result.selected_items[0].item.item_url == "https://example.com/upcoming"
+    assert result.actual_count == 0
+    assert not result.selected_items
     assert any("Fallback selection active" in warning for warning in result.warnings)

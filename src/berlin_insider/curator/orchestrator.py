@@ -47,6 +47,7 @@ class Curator:
             weekend_start=weekend_start,
             weekend_end=weekend_end,
             store=store,
+            digest_kind=cfg.digest_kind,
         )
         kept = self._dedupe(candidates, cfg, source_drops)
         selected, fallback_warning = self._select(kept, cfg, reference_now=reference_now)
@@ -70,6 +71,7 @@ class Curator:
         weekend_start: datetime,
         weekend_end: datetime,
         store: SentItemStore,
+        digest_kind: DigestKind,
     ) -> tuple[dict[int, list[DroppedItem]], list[Candidate]]:
         source_drops: dict[int, list[DroppedItem]] = defaultdict(list)
         candidates: list[Candidate] = []
@@ -83,6 +85,7 @@ class Curator:
                     weekend_end=weekend_end,
                     store=store,
                     source_drops=source_drops[source_order],
+                    digest_kind=digest_kind,
                 )
                 if candidate is not None:
                     candidates.append(candidate)
@@ -98,6 +101,7 @@ class Curator:
         weekend_end: datetime,
         store: SentItemStore,
         source_drops: list[DroppedItem],
+        digest_kind: DigestKind,
     ) -> Candidate | None:
         if not item.item_url.strip():
             source_drops.append(DroppedItem(item=item, reason=DropReason.MISSING_URL))
@@ -110,7 +114,11 @@ class Curator:
             source_drops.append(DroppedItem(item=item, reason=DropReason.ALREADY_SENT))
             return None
         in_window = event_in_window(item.event_start_at, weekend_start, weekend_end)
-        if not in_window and item.weekend_relevance == WeekendRelevance.UNLIKELY:
+        if (
+            digest_kind == DigestKind.WEEKEND
+            and not in_window
+            and item.weekend_relevance == WeekendRelevance.UNLIKELY
+        ):
             source_drops.append(DroppedItem(item=item, reason=DropReason.OUTSIDE_WEEKEND_WINDOW))
             return None
         scoring = score_item(item, event_in_window=in_window)
@@ -169,12 +177,10 @@ class Curator:
         pool = sorted(kept, key=candidate_sort_key)
         aware_now = reference_now if reference_now.tzinfo else reference_now.replace(tzinfo=UTC)
         local_date = aware_now.astimezone(BERLIN_TZ).date()
-        same_day, upcoming = nearest_upcoming_for_local_date(pool, local_date=local_date)
+        same_day, _ = nearest_upcoming_for_local_date(pool, local_date=local_date)
         if same_day:
             return [same_day[0]], None
-        if upcoming:
-            return [upcoming[0]], "Fallback selection active: no same-day items available"
-        return [pool[0]], "Fallback selection active: using best available item"
+        return [], "Fallback selection active: no same-day items available"
 
     def _record_non_selected(
         self,

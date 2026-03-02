@@ -2,8 +2,7 @@ from __future__ import annotations
 
 import re
 from collections import defaultdict
-from datetime import UTC, datetime, timedelta, tzinfo
-from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+from datetime import datetime
 
 from berlin_insider.curator.models import CuratedItem, CurateRunResult
 from berlin_insider.digest import DigestKind
@@ -28,8 +27,6 @@ _CATEGORY_LABELS = {
     ParsedCategory.MISC: "Misc",
 }
 
-_WEEKDAY_ABBR = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
-_MONTH_ABBR = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 _MARKDOWN_V2_SPECIALS = re.compile(r"([\\_*\[\]()~`>#+\-=|{}.!])")
 
 
@@ -49,25 +46,22 @@ def render_telegram_digest(
 def render_weekend_telegram_digest(
     curate: CurateRunResult,
     *,
-    reference_now: datetime,
+    reference_now: datetime,  # noqa: ARG001
     config: DigestFormatConfig | None = None,
 ) -> str:
     """Render curated weekend picks as a Telegram MarkdownV2 digest."""
     cfg = config or DigestFormatConfig()
-    tz = _timezone_or_utc(cfg.timezone)
-    local_now = reference_now.astimezone(tz)
-    weekend_start, weekend_end = _weekend_bounds(local_now)
     items = (
         curate.selected_items[: cfg.max_items]
         if cfg.max_items is not None
         else curate.selected_items
     )
-    lines = _build_header(weekend_start, weekend_end, cfg=cfg)
+    lines = _build_header()
     if not items:
         return _render_empty(lines)
     if _needs_fallback_note(curate):
         lines.extend(_fallback_lines())
-    lines.extend(_render_sections(items, cfg=cfg, tz=tz))
+    lines.extend(_render_sections(items, cfg=cfg))
     lines.extend(_render_footer(items))
     return "\n".join(lines)
 
@@ -75,15 +69,13 @@ def render_weekend_telegram_digest(
 def render_daily_telegram_digest(
     curate: CurateRunResult,
     *,
-    reference_now: datetime,
+    reference_now: datetime,  # noqa: ARG001
     config: DigestFormatConfig | None = None,
 ) -> str:
     """Render one daily curated recommendation in Telegram MarkdownV2 format."""
     cfg = config or DigestFormatConfig()
-    tz = _timezone_or_utc(cfg.timezone)
-    local_now = reference_now.astimezone(tz)
     lines = [
-        _escape_text(f"Berlin Insider | Tip of the Day ({_format_day(local_now)}, {cfg.timezone})"),
+        _escape_text("Berlin Insider | Tip of the Day"),
         "",
     ]
     items = curate.selected_items[:1]
@@ -91,19 +83,15 @@ def render_daily_telegram_digest(
         lines.append(_escape_text("No strong tip found today."))
         lines.append(_escape_text("We will share a fresh pick on the next run."))
         return "\n".join(lines)
-    lines.append(_render_bullet(items[0], cfg=cfg, tz=tz))
+    lines.append(_render_bullet(items[0], cfg=cfg))
     lines.append("")
     lines.extend(_render_footer(items))
     return "\n".join(lines)
 
 
-def _build_header(
-    weekend_start: datetime, weekend_end: datetime, *, cfg: DigestFormatConfig
-) -> list[str]:
+def _build_header() -> list[str]:
     return [
-        _escape_text(
-            f"Berlin Insider | Weekend Picks ({_format_day(weekend_start)} - {_format_day(weekend_end)}, {cfg.timezone})"
-        ),
+        _escape_text("Berlin Insider | Weekend Picks"),
         "",
     ]
 
@@ -121,7 +109,7 @@ def _fallback_lines() -> list[str]:
     ]
 
 
-def _render_sections(items: list[CuratedItem], *, cfg: DigestFormatConfig, tz: tzinfo) -> list[str]:
+def _render_sections(items: list[CuratedItem], *, cfg: DigestFormatConfig) -> list[str]:
     lines: list[str] = []
     by_category = _group_items(items)
     for category in _CATEGORY_ORDER:
@@ -130,7 +118,7 @@ def _render_sections(items: list[CuratedItem], *, cfg: DigestFormatConfig, tz: t
             continue
         lines.append(f"*{_escape_text(_CATEGORY_LABELS[category])}*")
         for item in grouped:
-            lines.append(_render_bullet(item, cfg=cfg, tz=tz))
+            lines.append(_render_bullet(item, cfg=cfg))
         lines.append("")
     return lines
 
@@ -146,52 +134,17 @@ def _group_items(items: list[CuratedItem]) -> dict[ParsedCategory, list[CuratedI
     return grouped
 
 
-def _render_bullet(curated_item: CuratedItem, *, cfg: DigestFormatConfig, tz: tzinfo) -> str:
+def _render_bullet(curated_item: CuratedItem, *, cfg: DigestFormatConfig) -> str:
     item: ParsedItem = curated_item.item
     title = _escape_text(item.title or "Untitled")
     url = _escape_url(item.item_url)
-    date_text = _escape_text(_format_item_date(item.event_start_at, tz=tz))
-    parts = [f"\\- [{title}]({url})", date_text]
+    parts = [f"\\- [{title}]({url})"]
     if cfg.show_location_when_present and item.location:
         parts.append(_escape_text(item.location))
     base_line = " \\| ".join(parts)
     if item.summary is None:
         return base_line
     return f"{base_line}\n{_escape_text(item.summary)}"
-
-
-def _timezone_or_utc(timezone_name: str) -> tzinfo:
-    try:
-        return ZoneInfo(timezone_name)
-    except ZoneInfoNotFoundError:
-        return UTC
-
-
-def _weekend_bounds(reference_now: datetime) -> tuple[datetime, datetime]:
-    weekday = reference_now.weekday()
-    if weekday <= 4:
-        days_to_friday = 4 - weekday
-    else:
-        days_to_friday = -(weekday - 4)
-    friday = (reference_now + timedelta(days=days_to_friday)).replace(
-        hour=0, minute=0, second=0, microsecond=0
-    )
-    sunday = friday + timedelta(days=2)
-    return friday, sunday
-
-
-def _format_day(value: datetime) -> str:
-    return f"{_WEEKDAY_ABBR[value.weekday()]} {value.day:02d} {_MONTH_ABBR[value.month - 1]}"
-
-
-def _format_item_date(value: datetime | None, *, tz: tzinfo) -> str:
-    if value is None:
-        return "Date TBA"
-    local = value.astimezone(tz)
-    day_text = _format_day(local)
-    if local.hour == 0 and local.minute == 0 and local.second == 0:
-        return day_text
-    return f"{day_text} {local.hour:02d}:{local.minute:02d}"
 
 
 def _needs_fallback_note(curate: CurateRunResult) -> bool:
