@@ -76,6 +76,11 @@ def _add_fetch_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) 
 def _add_worker_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
     worker = sub.add_parser("worker", help="Run always-on worker with scheduler and webhook")
     worker.add_argument(
+        "--run-once",
+        action="store_true",
+        help="Run one scheduler cycle immediately and exit",
+    )
+    worker.add_argument(
         "--timezone",
         default=os.getenv("WORKER_TIMEZONE", "Europe/Berlin"),
         help="IANA timezone used for schedule rules",

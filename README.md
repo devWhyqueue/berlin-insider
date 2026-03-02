@@ -23,6 +23,7 @@ uv run berlin-insider fetch --digest
 uv run berlin-insider fetch --digest --digest-kind daily
 uv run berlin-insider fetch --json --digest
 uv run berlin-insider worker --webhook-public-base-url https://example.com --telegram-webhook-secret my-secret
+uv run berlin-insider worker --run-once --db-path .data/berlin_insider.db
 ```
 
 ## Worker Runtime
@@ -61,6 +62,20 @@ Run locally:
 ```powershell
 uv run berlin-insider worker --webhook-public-base-url https://example.com --telegram-webhook-secret my-secret
 ```
+
+Run once on demand (immediate send, then exit):
+
+```powershell
+uv run berlin-insider worker --run-once --db-path .data/berlin_insider.db
+```
+
+`--run-once` uses the same weekday rules as the scheduler:
+
+- Friday (or configured `WORKER_WEEKEND_WEEKDAY`) sends `WEEKEND`
+- Every other day sends `DAILY`
+
+It does not start the webhook server, register Telegram webhook, or require
+`WEBHOOK_PUBLIC_BASE_URL` / `TELEGRAM_WEBHOOK_SECRET`.
 
 ## Deploy on Ubuntu (systemd)
 

@@ -18,12 +18,17 @@ from berlin_insider.curator.models import CurateRunResult
 from berlin_insider.curator.orchestrator import Curator
 from berlin_insider.curator.store import SqliteSentItemStore
 from berlin_insider.digest import DigestKind
+from berlin_insider.feedback.store import SqliteSentMessageStore
 from berlin_insider.fetcher.models import FetchContext, FetchRunResult, SourceId
 from berlin_insider.fetcher.orchestrator import Fetcher
 from berlin_insider.formatter import render_telegram_digest
+from berlin_insider.messenger.telegram import TelegramMessenger
 from berlin_insider.parser.models import ParseRunResult
 from berlin_insider.parser.orchestrator import Parser
+from berlin_insider.scheduler.cli_log import log_schedule_result
 from berlin_insider.scheduler.models import ScheduleConfig
+from berlin_insider.scheduler.orchestrator import Scheduler
+from berlin_insider.scheduler.store import SqliteSchedulerStateStore
 from berlin_insider.storage.content_store import persist_parse_run, upsert_source_websites
 from berlin_insider.worker import Worker, WorkerConfig
 
@@ -80,6 +85,19 @@ def _run_fetch_command(args) -> None:  # noqa: ANN001
 
 def _run_worker_command(args) -> None:  # noqa: ANN001
     db_path = Path(args.db_path)
+    schedule = _build_schedule_config(args)
+    if args.run_once:
+        result = Scheduler().run_once(
+            state_store=SqliteSchedulerStateStore(db_path),
+            config=schedule,
+            db_path=db_path,
+            target_items=args.target_items,
+            force=True,
+            messenger=TelegramMessenger.from_env(),
+            sent_message_store=SqliteSentMessageStore(db_path),
+        )
+        log_schedule_result(logger, result, json_output=False)
+        raise SystemExit(result.exit_code)
     if not args.webhook_public_base_url:
         raise SystemExit("WEBHOOK_PUBLIC_BASE_URL is required (or use --webhook-public-base-url).")
     if not args.telegram_webhook_secret:
@@ -88,14 +106,7 @@ def _run_worker_command(args) -> None:  # noqa: ANN001
         config=WorkerConfig(
             db_path=db_path,
             target_items=args.target_items,
-            schedule=ScheduleConfig(
-                timezone=args.timezone,
-                daily_hour=args.daily_hour,
-                daily_minute=args.daily_minute,
-                weekend_weekday=args.weekend_weekday,
-                weekend_hour=args.weekend_hour,
-                weekend_minute=args.weekend_minute,
-            ),
+            schedule=schedule,
             host=args.host,
             port=args.port,
             webhook_public_base_url=args.webhook_public_base_url,
@@ -106,6 +117,17 @@ def _run_worker_command(args) -> None:  # noqa: ANN001
             telegram_webhook_ip=args.telegram_webhook_ip,
         )
     ).run()
+
+
+def _build_schedule_config(args) -> ScheduleConfig:  # noqa: ANN001
+    return ScheduleConfig(
+        timezone=args.timezone,
+        daily_hour=args.daily_hour,
+        daily_minute=args.daily_minute,
+        weekend_weekday=args.weekend_weekday,
+        weekend_hour=args.weekend_hour,
+        weekend_minute=args.weekend_minute,
+    )
 
 
 def _fetch_context(args) -> FetchContext:  # noqa: ANN001
