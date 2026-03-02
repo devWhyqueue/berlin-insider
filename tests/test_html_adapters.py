@@ -126,3 +126,46 @@ def test_parse_eventbrite_jsonld() -> None:
     assert len(items) == 1
     assert items[0].title == "Berlin Classic Festival"
     assert items[0].location_hint == "Spreelounge"
+
+
+def test_parse_eventbrite_jsonld_nested_item_list() -> None:
+    html = """
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@graph": [
+          {
+            "@type": "WebPage",
+            "mainEntity": {
+              "@type": "ItemList",
+              "itemListElement": [
+                {
+                  "@type": "ListItem",
+                  "position": 1,
+                  "item": {
+                    "@type": "Event",
+                    "name": "Nested Event",
+                    "url": "https://www.eventbrite.de/e/nested",
+                    "startDate": "2026-03-08",
+                    "location": {"name": "Nested Venue"},
+                    "description": "Nested description."
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      }
+    </script>
+    """
+    items = parse_eventbrite_jsonld(
+        html,
+        SourceDefinition(
+            SourceId.EVENTBRITE_BERLIN_WEEKEND,
+            "https://www.eventbrite.de/d/germany--berlin/events--this-weekend/",
+        ),
+        _context(),
+    )
+    assert len(items) == 1
+    assert items[0].title == "Nested Event"
+    assert items[0].location_hint == "Nested Venue"
