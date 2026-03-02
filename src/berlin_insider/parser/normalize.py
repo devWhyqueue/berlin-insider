@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Any
 
 from berlin_insider.fetcher.models import FetchedItem
 from berlin_insider.parser.classify import CategoryDecision, infer_category
@@ -68,6 +69,8 @@ def _to_parsed_item(
     category: CategoryDecision,
     weekend: WeekendDecision,
 ) -> ParsedItem:
+    metadata = item.metadata if isinstance(item.metadata, dict) else {}
+    cached_summary = _as_optional_str(metadata.get("cached_summary"))
     return ParsedItem(
         source_id=item.source_id,
         item_url=item.item_url,
@@ -84,10 +87,11 @@ def _to_parsed_item(
         parse_notes=notes,
         raw={
             "raw_date_text": item.raw_date_text,
-            "metadata": item.metadata,
+            "metadata": metadata,
             "fetch_method": item.fetch_method.value,
             "detail_status": item.detail_status,
         },
+        summary=cached_summary,
     )
 
 
@@ -107,3 +111,10 @@ def _normalize_description(value: str | None) -> str | None:
 
 def _normalize_detail_text(value: str | None) -> str | None:
     return _normalize_text(value)
+
+
+def _as_optional_str(value: Any) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None

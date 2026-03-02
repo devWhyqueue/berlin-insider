@@ -8,13 +8,20 @@ from berlin_insider.fetcher.models import FetchRunResult, FetchStatus, SourceFet
 from berlin_insider.parser.models import ParsedItem, ParseRunResult, ParseStatus, SourceParseResult
 from berlin_insider.parser.normalize import normalize_fetched_item
 from berlin_insider.parser.summarizer import OpenAISummaryGenerator, SummaryGenerator
+from berlin_insider.storage.detail_cache import SqliteDetailCacheStore
 
 
 class Parser:
     """Normalize fetched items into parse-ready canonical objects."""
 
-    def __init__(self, *, summary_generator: SummaryGenerator | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        summary_generator: SummaryGenerator | None = None,
+        detail_cache_store: SqliteDetailCacheStore | None = None,
+    ) -> None:
         self._summary_generator = summary_generator or OpenAISummaryGenerator.from_env()
+        self._detail_cache_store = detail_cache_store
 
     def run(self, fetch_result: FetchRunResult) -> ParseRunResult:
         """Transform a fetch run into normalized parse results per source."""
@@ -90,6 +97,8 @@ class Parser:
     def _with_summary(
         self, parsed_item: ParsedItem, *, warnings: list[str], item_url: str
     ) -> ParsedItem:
+        if parsed_item.summary is not None:
+            return parsed_item
         try:
             summary = self._summary_generator.summarize(parsed_item)
         except Exception as exc:  # noqa: BLE001
@@ -97,8 +106,39 @@ class Parser:
             return parsed_item
         if summary is None:
             return parsed_item
+        self._persist_summary_to_cache(
+            parsed_item, summary=summary, warnings=warnings, item_url=item_url
+        )
         return replace(parsed_item, summary=summary)
+
+    def _persist_summary_to_cache(
+        self, parsed_item: ParsedItem, *, summary: str, warnings: list[str], item_url: str
+    ) -> None:
+        if self._detail_cache_store is None:
+            return
+        detail_hash = _detail_hash_from_raw(parsed_item)
+        if detail_hash is None:
+            return
+        try:
+            self._detail_cache_store.upsert_summary(
+                url=item_url,
+                detail_hash=detail_hash,
+                summary=summary,
+            )
+        except Exception as exc:  # noqa: BLE001
+            warnings.append(f"Failed to store cached summary for {item_url}: {exc}")
 
 
 def _duration_ms(started: float) -> int:
     return int((perf_counter() - started) * 1000)
+
+
+def _detail_hash_from_raw(item: ParsedItem) -> str | None:
+    metadata = item.raw.get("metadata")
+    if not isinstance(metadata, dict):
+        return None
+    value = metadata.get("detail_hash")
+    if value is None:
+        return None
+    detail_hash = str(value).strip()
+    return detail_hash or None

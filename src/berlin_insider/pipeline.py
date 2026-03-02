@@ -15,6 +15,7 @@ from berlin_insider.formatter import render_telegram_digest
 from berlin_insider.parser.models import ParseRunResult
 from berlin_insider.parser.orchestrator import Parser
 from berlin_insider.storage.content_store import persist_parse_run, upsert_source_websites
+from berlin_insider.storage.detail_cache import SqliteDetailCacheStore
 
 DEFAULT_USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
@@ -39,6 +40,8 @@ def build_fetch_context(
     timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS,
     max_items_per_source: int = DEFAULT_MAX_ITEMS_PER_SOURCE,
     collected_at: datetime | None = None,
+    detail_cache_db_path: Path | None = None,
+    refresh_detail_cache: bool = False,
 ) -> FetchContext:
     """Build a fetch context using stable CLI/scheduler defaults."""
     return FetchContext(
@@ -46,6 +49,8 @@ def build_fetch_context(
         timeout_seconds=timeout_seconds,
         max_items_per_source=max_items_per_source,
         collected_at=collected_at or datetime.now(UTC),
+        detail_cache_db_path=detail_cache_db_path,
+        refresh_detail_cache=refresh_detail_cache,
     )
 
 
@@ -57,8 +62,18 @@ def run_fetch_parse_pipeline(
 ) -> tuple[FetchRunResult, ParseRunResult]:
     """Run fetch and parse stages and return both run results."""
     upsert_source_websites(db_path)
-    fetch_result = Fetcher().run(context=context, source_ids=source_ids)
-    parse_result = Parser().run(fetch_result)
+    effective_context = context
+    if context.detail_cache_db_path is None:
+        effective_context = FetchContext(
+            user_agent=context.user_agent,
+            timeout_seconds=context.timeout_seconds,
+            max_items_per_source=context.max_items_per_source,
+            collected_at=context.collected_at,
+            detail_cache_db_path=db_path,
+            refresh_detail_cache=context.refresh_detail_cache,
+        )
+    fetch_result = Fetcher().run(context=effective_context, source_ids=source_ids)
+    parse_result = Parser(detail_cache_store=SqliteDetailCacheStore(db_path)).run(fetch_result)
     persist_parse_run(db_path, parse_result)
     return fetch_result, parse_result
 

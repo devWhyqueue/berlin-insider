@@ -1,4 +1,5 @@
 from datetime import UTC, datetime
+from pathlib import Path
 
 import berlin_insider.parser.orchestrator as parser_module
 from berlin_insider.fetcher.models import (
@@ -11,6 +12,7 @@ from berlin_insider.fetcher.models import (
 )
 from berlin_insider.parser.models import ParseStatus
 from berlin_insider.parser.orchestrator import Parser
+from berlin_insider.storage.detail_cache import SqliteDetailCacheStore
 
 
 def _fetched_item(source_id: SourceId, url: str) -> FetchedItem:
@@ -152,3 +154,75 @@ def test_parser_keeps_item_when_summary_generator_fails() -> None:
     assert len(parsed.results[0].items) == 1
     assert parsed.results[0].items[0].summary is None
     assert any("Failed to summarize item" in warning for warning in parsed.results[0].warnings)
+
+
+def test_parser_skips_summary_call_when_cached_summary_present() -> None:
+    calls = {"count": 0}
+
+    class _CountingSummaryGenerator:
+        def summarize(self, item):  # noqa: ANN001, ANN202
+            calls["count"] += 1
+            return "Generated summary should not be used."
+
+    item = _fetched_item(SourceId.MITVERGNUEGEN, "https://example.com/cached")
+    item.metadata = {"cached_summary": "Cached summary from detail cache", "detail_hash": "hash-cached"}
+    fetch_result = FetchRunResult(
+        started_at=datetime(2026, 2, 27, 8, 0, tzinfo=UTC),
+        finished_at=datetime(2026, 2, 27, 9, 0, tzinfo=UTC),
+        results=[
+            SourceFetchResult(
+                source_id=SourceId.MITVERGNUEGEN,
+                status=FetchStatus.SUCCESS,
+                items=[item],
+                warnings=[],
+                error_message=None,
+                duration_ms=1,
+            )
+        ],
+        total_items=1,
+        failed_sources=[],
+    )
+
+    parsed = Parser(summary_generator=_CountingSummaryGenerator()).run(fetch_result)
+    assert calls["count"] == 0
+    assert parsed.results[0].items[0].summary == "Cached summary from detail cache"
+
+
+def test_parser_persists_generated_summary_to_detail_cache(tmp_path: Path) -> None:
+    class _FakeSummaryGenerator:
+        def summarize(self, item):  # noqa: ANN001, ANN202
+            return "Generated summary"
+
+    db_path = tmp_path / "cache.db"
+    cache = SqliteDetailCacheStore(db_path)
+    cache.upsert_detail(
+        url="https://example.com/summary-target",
+        source_id=SourceId.MITVERGNUEGEN.value,
+        detail_text="Detail body",
+        detail_hash="hash-target",
+        detail_status="ok",
+    )
+    item = _fetched_item(SourceId.MITVERGNUEGEN, "https://example.com/summary-target")
+    item.metadata = {"detail_hash": "hash-target"}
+    fetch_result = FetchRunResult(
+        started_at=datetime(2026, 2, 27, 8, 0, tzinfo=UTC),
+        finished_at=datetime(2026, 2, 27, 9, 0, tzinfo=UTC),
+        results=[
+            SourceFetchResult(
+                source_id=SourceId.MITVERGNUEGEN,
+                status=FetchStatus.SUCCESS,
+                items=[item],
+                warnings=[],
+                error_message=None,
+                duration_ms=1,
+            )
+        ],
+        total_items=1,
+        failed_sources=[],
+    )
+
+    parsed = Parser(summary_generator=_FakeSummaryGenerator(), detail_cache_store=cache).run(fetch_result)
+    assert parsed.results[0].items[0].summary == "Generated summary"
+    refreshed = cache.get("https://example.com/summary-target")
+    assert refreshed is not None
+    assert refreshed.summary == "Generated summary"

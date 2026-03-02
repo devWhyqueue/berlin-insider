@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from pathlib import Path
 
 from berlin_insider.fetcher.utils import enrich_items_with_detail, extract_detail_text
 from berlin_insider.fetcher.models import FetchContext, FetchedItem, FetchMethod, SourceId
+from berlin_insider.storage.detail_cache import SqliteDetailCacheStore
 
 
 def _context() -> FetchContext:
@@ -140,3 +142,83 @@ def test_enrich_items_with_detail_retries_tip_pages_with_playwright(monkeypatch)
     assert enriched_items[0].detail_status == "ok"
     assert enriched_items[0].detail_text is not None
     assert warnings == []
+
+
+def test_enrich_items_with_detail_uses_cache_hit(tmp_path: Path, monkeypatch) -> None:
+    db_path = tmp_path / "cache.db"
+    cache = SqliteDetailCacheStore(db_path)
+    cache.upsert_detail(
+        url="https://example.com/a?utm_source=test",
+        source_id=SourceId.MITVERGNUEGEN.value,
+        detail_text="Cached detail text",
+        detail_hash="hash-a",
+        detail_status="ok",
+    )
+    cache.upsert_summary(
+        url="https://example.com/a",
+        detail_hash="hash-a",
+        summary="Cached summary",
+    )
+
+    def _raise(*args, **kwargs):  # noqa: ANN002, ANN003, ARG001
+        raise AssertionError("detail network fetch should not run on cache hit")
+
+    monkeypatch.setattr("berlin_insider.fetcher.utils.get_text_with_retries", _raise)
+    context = _context()
+    context.detail_cache_db_path = db_path
+    enriched_items, warnings = enrich_items_with_detail([_item("https://example.com/a")], context=context)
+    assert warnings == []
+    assert enriched_items[0].detail_status == "cache_hit"
+    assert enriched_items[0].detail_text == "Cached detail text"
+    assert enriched_items[0].metadata.get("detail_cache_hit") is True
+    assert enriched_items[0].metadata.get("cached_summary") == "Cached summary"
+
+
+def test_enrich_items_with_detail_cache_miss_writes_cache(tmp_path: Path, monkeypatch) -> None:
+    db_path = tmp_path / "cache.db"
+
+    def _detail_get(url: str, **kwargs):  # noqa: ANN003, ARG001
+        return "<html><body><article>Fresh detail body text long enough to pass extraction and be cached for future runs.</article></body></html>"
+
+    monkeypatch.setattr("berlin_insider.fetcher.utils.get_text_with_retries", _detail_get)
+    context = _context()
+    context.detail_cache_db_path = db_path
+    enriched_items, warnings = enrich_items_with_detail([_item("https://example.com/new")], context=context)
+    assert warnings == []
+    assert enriched_items[0].detail_status == "ok"
+    detail_hash = enriched_items[0].metadata.get("detail_hash")
+    assert isinstance(detail_hash, str)
+    cached = SqliteDetailCacheStore(db_path).get("https://example.com/new")
+    assert cached is not None
+    assert cached.detail_hash == detail_hash
+
+
+def test_enrich_items_with_detail_refresh_bypasses_cache(tmp_path: Path, monkeypatch) -> None:
+    db_path = tmp_path / "cache.db"
+    cache = SqliteDetailCacheStore(db_path)
+    cache.upsert_detail(
+        url="https://example.com/refresh",
+        source_id=SourceId.MITVERGNUEGEN.value,
+        detail_text="Old detail",
+        detail_hash="old-hash",
+        detail_status="ok",
+    )
+    calls = {"count": 0}
+
+    def _detail_get(url: str, **kwargs):  # noqa: ANN003, ARG001
+        calls["count"] += 1
+        return "<html><body><article>Refreshed detail text with enough content to be extracted and replace cache value.</article></body></html>"
+
+    monkeypatch.setattr("berlin_insider.fetcher.utils.get_text_with_retries", _detail_get)
+    context = _context()
+    context.detail_cache_db_path = db_path
+    context.refresh_detail_cache = True
+    enriched_items, warnings = enrich_items_with_detail(
+        [_item("https://example.com/refresh")], context=context
+    )
+    assert warnings == []
+    assert calls["count"] == 1
+    assert enriched_items[0].detail_status == "ok"
+    cached = SqliteDetailCacheStore(db_path).get("https://example.com/refresh")
+    assert cached is not None
+    assert cached.detail_text != "Old detail"

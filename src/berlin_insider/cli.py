@@ -114,6 +114,8 @@ def _fetch_context(args) -> FetchContext:  # noqa: ANN001
         timeout_seconds=args.timeout,
         max_items_per_source=args.max_items_per_source,
         collected_at=datetime.now(UTC),
+        detail_cache_db_path=Path(args.db_path),
+        refresh_detail_cache=args.refresh_detail_cache,
     )
 
 

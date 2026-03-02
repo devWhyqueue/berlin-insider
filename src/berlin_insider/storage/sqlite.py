@@ -94,8 +94,23 @@ CREATE TABLE IF NOT EXISTS parsed_items (
   FOREIGN KEY (run_id) REFERENCES parse_runs (run_id) ON DELETE CASCADE
 );
 
+CREATE TABLE IF NOT EXISTS detail_cache (
+  canonical_url TEXT PRIMARY KEY,
+  source_id TEXT,
+  detail_text TEXT NOT NULL,
+  detail_hash TEXT NOT NULL,
+  summary TEXT,
+  first_fetched_at TEXT NOT NULL,
+  last_fetched_at TEXT NOT NULL,
+  last_used_at TEXT NOT NULL,
+  detail_status TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_parsed_items_run_id ON parsed_items (run_id);
 CREATE INDEX IF NOT EXISTS idx_parsed_items_source_id ON parsed_items (source_id);
+CREATE INDEX IF NOT EXISTS idx_detail_cache_last_used_at ON detail_cache (last_used_at);
+CREATE INDEX IF NOT EXISTS idx_detail_cache_source_id ON detail_cache (source_id);
 """
 
 

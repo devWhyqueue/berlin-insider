@@ -56,6 +56,11 @@ def _add_fetch_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) 
         help="Maximum number of collected items per source",
     )
     fetch.add_argument(
+        "--refresh-detail-cache",
+        action="store_true",
+        help="Force re-fetch detail pages and refresh cache for this run",
+    )
+    fetch.add_argument(
         "--user-agent",
         default=DEFAULT_USER_AGENT,
         help="HTTP user-agent string used for requests",

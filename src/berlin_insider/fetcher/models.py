@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import StrEnum
+from pathlib import Path
 from typing import Any
 
 
@@ -43,6 +44,8 @@ class FetchContext:
     timeout_seconds: float
     max_items_per_source: int
     collected_at: datetime
+    detail_cache_db_path: Path | None = None
+    refresh_detail_cache: bool = False
 
 
 @dataclass(slots=True)

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import replace
 from datetime import UTC, datetime
@@ -11,6 +12,7 @@ from bs4 import BeautifulSoup
 
 from berlin_insider.fetcher.http import get_text_with_playwright, get_text_with_retries
 from berlin_insider.fetcher.models import FetchContext, FetchedItem
+from berlin_insider.storage.detail_cache_enrichment import enrich_one_with_cache
 
 MAX_DETAIL_WORKERS = 4
 MIN_DETAIL_LENGTH = 60
@@ -61,7 +63,8 @@ def enrich_items_with_detail(
     """Fetch and attach cleaned detail-page text for each item URL."""
     if not items:
         return items, []
-    return _enrich_items_parallel(items, context=context)
+    worker = _enrich_one if context.detail_cache_db_path is None else _enrich_one_cached_wrapper
+    return _enrich_items_parallel(items, context=context, worker=worker)
 
 
 def extract_detail_text(html: str) -> str | None:
@@ -80,42 +83,34 @@ def extract_detail_text(html: str) -> str | None:
 
 
 def _enrich_items_parallel(
-    items: list[FetchedItem], *, context: FetchContext
+    items: list[FetchedItem],
+    *,
+    context: FetchContext,
+    worker: Callable[..., tuple[FetchedItem, str | None]],
 ) -> tuple[list[FetchedItem], list[str]]:
     warnings: list[str] = []
     enriched_by_index: dict[int, FetchedItem] = {}
     workers = min(MAX_DETAIL_WORKERS, len(items))
     with ThreadPoolExecutor(max_workers=workers) as executor:
         tasks = {
-            executor.submit(_enrich_one, item, context=context): idx
-            for idx, item in enumerate(items)
+            executor.submit(worker, item, context=context): idx for idx, item in enumerate(items)
         }
         for task in as_completed(tasks):
-            _collect_enriched_result(task, tasks, items, enriched_by_index, warnings)
+            idx = tasks[task]
+            item = items[idx]
+            try:
+                enriched, warning = task.result()
+            except Exception as exc:  # noqa: BLE001
+                fallback = _fallback_detail_text(item)
+                warning = f"Detail enrich failed for {item.item_url}: {exc}"
+                if fallback is None:
+                    enriched = replace(item, detail_status="fetch_error")
+                else:
+                    enriched = replace(item, detail_text=fallback, detail_status="fallback_listing")
+            enriched_by_index[idx] = enriched
+            if warning:
+                warnings.append(warning)
     return [enriched_by_index[idx] for idx in range(len(items))], warnings
-
-
-def _collect_enriched_result(
-    task,
-    tasks,
-    items: list[FetchedItem],
-    enriched_by_index: dict[int, FetchedItem],
-    warnings: list[str],
-) -> None:
-    idx = tasks[task]
-    item = items[idx]
-    try:
-        enriched, warning = task.result()
-    except Exception as exc:  # noqa: BLE001
-        fallback = _fallback_detail_text(item)
-        warning = f"Detail enrich failed for {item.item_url}: {exc}"
-        if fallback is None:
-            enriched = replace(item, detail_status="fetch_error")
-        else:
-            enriched = replace(item, detail_text=fallback, detail_status="fallback_listing")
-    enriched_by_index[idx] = enriched
-    if warning:
-        warnings.append(warning)
 
 
 def _enrich_one(item: FetchedItem, *, context: FetchContext) -> tuple[FetchedItem, str | None]:
@@ -136,6 +131,12 @@ def _enrich_one(item: FetchedItem, *, context: FetchContext) -> tuple[FetchedIte
         warning = f"Detail content empty for {item.item_url}; used listing fallback"
         return replace(item, detail_text=fallback, detail_status="fallback_listing"), warning
     return replace(item, detail_text=detail_text, detail_status="ok"), None
+
+
+def _enrich_one_cached_wrapper(
+    item: FetchedItem, *, context: FetchContext
+) -> tuple[FetchedItem, str | None]:
+    return enrich_one_with_cache(item, context=context, enrich_one=_enrich_one)
 
 
 def _parse_datetime_flexible(value: str) -> datetime | None:
