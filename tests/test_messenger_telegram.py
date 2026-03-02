@@ -73,6 +73,18 @@ def test_telegram_messenger_from_env_requires_keys() -> None:
         TelegramMessenger.from_env(env={"TELEGRAM_CHAT_ID": "-10001"})
 
 
+def test_telegram_messenger_from_env_strips_crlf_from_values() -> None:
+    messenger = TelegramMessenger.from_env(
+        env={
+            "TELEGRAM_BOT_TOKEN": "token123\r\n",
+            "TELEGRAM_CHAT_ID": "-10001\r",
+            "TELEGRAM_API_BASE": "https://api.telegram.org\r",
+        }
+    )
+
+    assert messenger._api_url("sendMessage") == "https://api.telegram.org/bottoken123/sendMessage"
+
+
 def test_telegram_messenger_sends_feedback_buttons(monkeypatch) -> None:
     captured: dict[str, object] = {}
 
@@ -195,7 +207,7 @@ def test_telegram_messenger_registers_webhook_with_certificate_and_ip(
     assert captured["has_files"] is True
 
 
-def test_telegram_messenger_edits_feedback_message(monkeypatch) -> None:
+def test_telegram_messenger_edits_feedback_markup(monkeypatch) -> None:
     payloads: list[dict[str, object]] = []
 
     def _fake_post(url, *, json=None, timeout=None):  # noqa: ANN001, ANN202
@@ -206,14 +218,6 @@ def test_telegram_messenger_edits_feedback_message(monkeypatch) -> None:
     messenger = TelegramMessenger(bot_token="token", chat_id="-10001")
 
     messenger.edit_message_reply_markup(chat_id=-1000, message_id=42)
-    messenger.edit_message_text(chat_id=-1000, message_id=42, text="Updated")
 
     assert payloads[0]["url"] == "https://api.telegram.org/bottoken/editMessageReplyMarkup"
     assert payloads[0]["json"] == {"chat_id": "-1000", "message_id": 42, "reply_markup": {}}
-    assert payloads[1]["url"] == "https://api.telegram.org/bottoken/editMessageText"
-    assert payloads[1]["json"] == {
-        "chat_id": "-1000",
-        "message_id": 42,
-        "text": "Updated",
-        "disable_web_page_preview": True,
-    }

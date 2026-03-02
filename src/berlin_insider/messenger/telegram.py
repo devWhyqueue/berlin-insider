@@ -30,9 +30,9 @@ class TelegramMessenger:
     def from_env(cls, env: Mapping[str, str] | None = None) -> TelegramMessenger:
         """Create an instance from TELEGRAM_* environment variables."""
         source = env if env is not None else os.environ
-        bot_token = source.get("TELEGRAM_BOT_TOKEN")
-        chat_id = source.get("TELEGRAM_CHAT_ID")
-        api_base = source.get("TELEGRAM_API_BASE", _DEFAULT_API_BASE)
+        bot_token = _normalized_env_value(source.get("TELEGRAM_BOT_TOKEN"))
+        chat_id = _normalized_env_value(source.get("TELEGRAM_CHAT_ID"))
+        api_base = _normalized_env_value(source.get("TELEGRAM_API_BASE")) or _DEFAULT_API_BASE
         missing = [
             key
             for key, value in (
@@ -84,18 +84,6 @@ class TelegramMessenger:
         self._post_api(
             "editMessageReplyMarkup",
             payload={"chat_id": str(chat_id), "message_id": message_id, "reply_markup": {}},
-        )
-
-    def edit_message_text(self, *, chat_id: int | str, message_id: int, text: str) -> None:
-        """Edit a message body with plain text confirmation suffix."""
-        self._post_api(
-            "editMessageText",
-            payload={
-                "chat_id": str(chat_id),
-                "message_id": message_id,
-                "text": text,
-                "disable_web_page_preview": True,
-            },
         )
 
     def set_webhook(
@@ -219,3 +207,12 @@ def _json_payload(response: httpx.Response) -> dict[str, object]:
     if not isinstance(payload_obj, dict):
         raise MessengerError("telegram API payload has unexpected shape")
     return payload_obj
+
+
+def _normalized_env_value(raw: str | None) -> str | None:
+    if raw is None:
+        return None
+    cleaned = raw.strip()
+    if not cleaned:
+        return None
+    return cleaned
