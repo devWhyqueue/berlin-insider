@@ -6,15 +6,27 @@ from datetime import UTC, datetime
 from typing import Protocol
 
 from berlin_insider.digest import DigestKind
-from berlin_insider.feedback.models import FeedbackEvent, FeedbackVote
+from berlin_insider.feedback.messages import render_daily_alternative_message
+from berlin_insider.feedback.models import FeedbackEvent, FeedbackVote, SentMessageRecord
 from berlin_insider.feedback.store import SqliteFeedbackStore, SqliteSentMessageStore
+from berlin_insider.messenger.models import DeliveryResult, FeedbackMetadata
 
 logger = logging.getLogger(__name__)
+_ALTERNATIVE_SUFFIX = "-alt1"
 
 
-class CallbackAcknowledger(Protocol):
+class FeedbackMessenger(Protocol):
     def answer_callback_query(self, *, callback_query_id: str) -> None:
         """Acknowledge callback query events."""
+        ...
+
+    def send_digest(
+        self,
+        *,
+        text: str,
+        feedback_metadata: FeedbackMetadata | None = None,
+    ) -> DeliveryResult:
+        """Send follow-up digest text through Telegram."""
         ...
 
 
@@ -29,7 +41,7 @@ class FeedbackIngestResult:
 def ingest_feedback_update(
     *,
     update: dict[str, object],
-    messenger: CallbackAcknowledger,
+    messenger: FeedbackMessenger,
     feedback_store: SqliteFeedbackStore,
     sent_message_store: SqliteSentMessageStore,
 ) -> FeedbackIngestResult:
@@ -72,9 +84,7 @@ def parse_feedback_callback(
     return message_key, digest_kind, vote
 
 
-def _ignore_with_ack(
-    *, messenger: CallbackAcknowledger, callback_id: object
-) -> FeedbackIngestResult:
+def _ignore_with_ack(*, messenger: FeedbackMessenger, callback_id: object) -> FeedbackIngestResult:
     answered = _ack_if_possible(messenger=messenger, callback_id=callback_id)
     return FeedbackIngestResult(
         processed_callback=True,
@@ -87,7 +97,7 @@ def _ignore_with_ack(
 def _process_callback_query(
     *,
     callback_query: dict[str, object],
-    messenger: CallbackAcknowledger,
+    messenger: FeedbackMessenger,
     feedback_store: SqliteFeedbackStore,
     sent_message_store: SqliteSentMessageStore,
 ) -> FeedbackIngestResult:
@@ -96,7 +106,10 @@ def _process_callback_query(
     if parsed is None:
         return _ignore_with_ack(messenger=messenger, callback_id=callback_id)
     message_key, digest_kind, vote = parsed
-    if sent_message_store.get(message_key) is None:
+    if digest_kind != DigestKind.DAILY:
+        return _ignore_with_ack(messenger=messenger, callback_id=callback_id)
+    sent_message = sent_message_store.get(message_key)
+    if sent_message is None:
         return _ignore_with_ack(messenger=messenger, callback_id=callback_id)
     event = _event_from_callback(
         callback_query=callback_query,
@@ -107,6 +120,12 @@ def _process_callback_query(
     if event is None:
         return _ignore_with_ack(messenger=messenger, callback_id=callback_id)
     feedback_store.upsert(event)
+    if vote == "down":
+        _send_alternative_follow_up_if_needed(
+            messenger=messenger,
+            sent_message_store=sent_message_store,
+            sent_message=sent_message,
+        )
     _update_feedback_message_ui(messenger=messenger, callback_query=callback_query)
     answered = _ack_if_possible(messenger=messenger, callback_id=callback_id)
     return FeedbackIngestResult(
@@ -117,12 +136,12 @@ def _process_callback_query(
     )
 
 
-def _ack_if_possible(*, messenger: CallbackAcknowledger, callback_id: object) -> bool:
+def _ack_if_possible(*, messenger: FeedbackMessenger, callback_id: object) -> bool:
     if not isinstance(callback_id, str):
         return False
     try:
         messenger.answer_callback_query(callback_query_id=callback_id)
-    except Exception:  # noqa: BLE001
+    except RuntimeError:
         logger.warning("Failed to acknowledge callback query id=%s", callback_id)
         return False
     return True
@@ -156,7 +175,9 @@ def _event_from_callback(
     )
 
 
-def _update_feedback_message_ui(*, messenger: CallbackAcknowledger, callback_query: dict[str, object]) -> None:
+def _update_feedback_message_ui(
+    *, messenger: FeedbackMessenger, callback_query: dict[str, object]
+) -> None:
     message_obj = callback_query.get("message")
     if not isinstance(message_obj, dict):
         return
@@ -168,11 +189,61 @@ def _update_feedback_message_ui(*, messenger: CallbackAcknowledger, callback_que
     _try_remove_buttons(messenger=messenger, chat_id=chat_id, message_id=message_id)
 
 
-def _try_remove_buttons(*, messenger: CallbackAcknowledger, chat_id: object, message_id: int) -> None:
+def _try_remove_buttons(*, messenger: FeedbackMessenger, chat_id: object, message_id: int) -> None:
     method = getattr(messenger, "edit_message_reply_markup", None)
     if not callable(method):
         return
     try:
         method(chat_id=chat_id, message_id=message_id)
-    except Exception:  # noqa: BLE001
+    except RuntimeError:
         return
+
+
+def _send_alternative_follow_up_if_needed(
+    *,
+    messenger: FeedbackMessenger,
+    sent_message_store: SqliteSentMessageStore,
+    sent_message: SentMessageRecord,
+) -> None:
+    if _is_alternative_message_key(sent_message.message_key):
+        return
+    alternative_url = _extract_alternative_url(sent_message.selected_urls)
+    if alternative_url is None:
+        return
+    alternative_message_key = f"{sent_message.message_key}{_ALTERNATIVE_SUFFIX}"
+    if sent_message_store.get(alternative_message_key) is not None:
+        return
+    try:
+        delivery = messenger.send_digest(
+            text=render_daily_alternative_message(alternative_url=alternative_url),
+            feedback_metadata=FeedbackMetadata(
+                digest_kind=DigestKind.DAILY,
+                message_key=alternative_message_key,
+            ),
+        )
+    except RuntimeError:
+        logger.warning(
+            "Failed to send daily alternative follow-up for message_key=%s",
+            sent_message.message_key,
+        )
+        return
+    sent_message_store.upsert(
+        SentMessageRecord(
+            message_key=alternative_message_key,
+            digest_kind=DigestKind.DAILY,
+            local_date=sent_message.local_date,
+            sent_at=delivery.delivered_at.isoformat(),
+            telegram_message_id=delivery.external_message_id,
+            selected_urls=[alternative_url],
+        )
+    )
+
+
+def _extract_alternative_url(selected_urls: list[str]) -> str | None:
+    return (
+        selected_urls[1].strip() if len(selected_urls) >= 2 and selected_urls[1].strip() else None
+    )
+
+
+def _is_alternative_message_key(message_key: str) -> bool:
+    return message_key.endswith(_ALTERNATIVE_SUFFIX)

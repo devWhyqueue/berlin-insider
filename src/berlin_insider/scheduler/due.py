@@ -3,7 +3,11 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
+from berlin_insider.curator.models import DropReason
 from berlin_insider.digest import DigestKind
+from berlin_insider.feedback.models import SentMessageRecord
+from berlin_insider.feedback.store import SqliteSentMessageStore
+from berlin_insider.pipeline import FullPipelineRunResult
 from berlin_insider.scheduler.models import ScheduleConfig, SchedulerState
 
 _WEEKDAY_TO_INDEX = {
@@ -47,6 +51,71 @@ def expected_digest_kind(*, now_utc: datetime, config: ScheduleConfig) -> Digest
     if expected_weekday is None:
         return None
     return _expected_digest_kind(local_now.weekday(), weekend_weekday=expected_weekday)
+
+
+def persist_sent_message(
+    *,
+    store: SqliteSentMessageStore,
+    message_key: str,
+    digest_kind: DigestKind,
+    local_date: str,
+    delivered_at: str,
+    message_id: str,
+    pipeline_result: FullPipelineRunResult,
+) -> None:
+    """Persist sent-message metadata and include one daily fallback URL when available."""
+    store.upsert(
+        SentMessageRecord(
+            message_key=message_key,
+            digest_kind=digest_kind,
+            local_date=local_date,
+            sent_at=delivered_at,
+            telegram_message_id=message_id,
+            selected_urls=selected_urls_for_sent_message(
+                digest_kind=digest_kind,
+                pipeline_result=pipeline_result,
+            ),
+        )
+    )
+
+
+def selected_urls_for_sent_message(
+    *,
+    digest_kind: DigestKind,
+    pipeline_result: FullPipelineRunResult,
+) -> list[str]:
+    """Return URLs to store for sent-message feedback workflows."""
+    selected_urls = [item.item.item_url for item in pipeline_result.curate_result.selected_items]
+    if digest_kind != DigestKind.DAILY:
+        return selected_urls
+    if not selected_urls:
+        return []
+    primary_url = selected_urls[0]
+    alternative_url = daily_alternative_url(
+        excluded_urls={primary_url},
+        pipeline_result=pipeline_result,
+    )
+    if alternative_url is None:
+        return [primary_url]
+    return [primary_url, alternative_url]
+
+
+def daily_alternative_url(
+    *,
+    excluded_urls: set[str],
+    pipeline_result: FullPipelineRunResult,
+) -> str | None:
+    """Choose one non-selected daily fallback URL from dropped low-priority candidates."""
+    allowed_drop_reasons = {DropReason.LOW_SCORE, DropReason.UNKNOWN_WEEKEND_RELEVANCE}
+    for source_result in pipeline_result.curate_result.results:
+        for dropped in source_result.dropped_items:
+            if dropped.reason not in allowed_drop_reasons:
+                continue
+            url = dropped.item.item_url.strip()
+            if not url or url in excluded_urls:
+                continue
+            return url
+    return None
 
 
 def _scheduled_time_for_kind(*, digest_kind: DigestKind, config: ScheduleConfig) -> tuple[int, int]:

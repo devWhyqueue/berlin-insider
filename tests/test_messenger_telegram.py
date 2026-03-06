@@ -110,6 +110,21 @@ def test_telegram_messenger_sends_feedback_buttons(monkeypatch) -> None:
     assert keyboard[0][1]["callback_data"] == "fb:v1:daily:daily-2026-02-23-abcdef:down"
 
 
+def test_telegram_messenger_does_not_send_feedback_buttons_without_metadata(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    def _fake_post(url, *, json, timeout):  # noqa: ANN001, ANN202
+        captured["json"] = json
+        return httpx.Response(status_code=200, json={"ok": True, "result": {"message_id": 123}})
+
+    monkeypatch.setattr("berlin_insider.messenger.telegram.httpx.post", _fake_post)
+    messenger = TelegramMessenger(bot_token="token", chat_id="-10001")
+    messenger.send_digest(text="Berlin Insider")
+    payload = captured["json"]
+    assert isinstance(payload, dict)
+    assert "reply_markup" not in payload
+
+
 def test_telegram_messenger_registers_webhook(monkeypatch) -> None:
     captured: dict[str, object] = {}
 

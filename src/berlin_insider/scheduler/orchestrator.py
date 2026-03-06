@@ -4,12 +4,11 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from berlin_insider.digest import DigestKind
-from berlin_insider.feedback.models import SentMessageRecord
 from berlin_insider.feedback.store import SqliteSentMessageStore
 from berlin_insider.messenger.models import FeedbackMetadata, Messenger, MessengerError
 from berlin_insider.messenger.telegram import TelegramMessenger
 from berlin_insider.pipeline import build_fetch_context, run_full_pipeline
-from berlin_insider.scheduler.due import expected_digest_kind, is_due
+from berlin_insider.scheduler.due import expected_digest_kind, is_due, persist_sent_message
 from berlin_insider.scheduler.models import ScheduleConfig, SchedulerState, ScheduleRunResult
 from berlin_insider.scheduler.result_builders import (
     build_delivery_error_result,
@@ -184,10 +183,15 @@ def _execute_due_run(
         )
     message_key = build_message_key(digest_kind=digest_kind, local_date=local_date)
     messenger_instance = messenger or TelegramMessenger.from_env()
+    feedback_metadata = (
+        FeedbackMetadata(digest_kind=digest_kind, message_key=message_key)
+        if digest_kind == DigestKind.DAILY
+        else None
+    )
     try:
         delivery = messenger_instance.send_digest(
             text=pipeline_result.digest,
-            feedback_metadata=FeedbackMetadata(digest_kind=digest_kind, message_key=message_key),
+            feedback_metadata=feedback_metadata,
         )
     except MessengerError as exc:
         return build_delivery_error_result(
@@ -200,14 +204,14 @@ def _execute_due_run(
             pipeline_result=pipeline_result,
             exc=exc,
         )
-    _persist_sent_message(
+    persist_sent_message(
         store=sent_message_store or SqliteSentMessageStore(db_path),
         message_key=message_key,
         digest_kind=digest_kind,
         local_date=local_date,
         delivered_at=delivery.delivered_at.isoformat(),
         message_id=delivery.external_message_id,
-        selected_urls=[item.item.item_url for item in pipeline_result.curate_result.selected_items],
+        pipeline_result=pipeline_result,
     )
     return build_success_result(
         state_store=state_store,
@@ -220,26 +224,4 @@ def _execute_due_run(
         reference_now=reference_now,
         pipeline_result=pipeline_result,
         delivery_result=delivery,
-    )
-
-
-def _persist_sent_message(
-    *,
-    store: SqliteSentMessageStore,
-    message_key: str,
-    digest_kind: DigestKind,
-    local_date: str,
-    delivered_at: str,
-    message_id: str,
-    selected_urls: list[str],
-) -> None:
-    store.upsert(
-        SentMessageRecord(
-            message_key=message_key,
-            digest_kind=digest_kind,
-            local_date=local_date,
-            sent_at=delivered_at,
-            telegram_message_id=message_id,
-            selected_urls=selected_urls,
-        )
     )

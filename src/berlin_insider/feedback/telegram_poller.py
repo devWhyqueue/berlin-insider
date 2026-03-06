@@ -11,6 +11,7 @@ from berlin_insider.feedback.store import (
     SqliteSentMessageStore,
     SqliteTelegramUpdatesStateStore,
 )
+from berlin_insider.messenger.models import DeliveryResult, FeedbackMetadata
 
 
 class FeedbackMessenger(Protocol):
@@ -22,6 +23,15 @@ class FeedbackMessenger(Protocol):
 
     def answer_callback_query(self, *, callback_query_id: str) -> None:
         """Acknowledge a Telegram callback query."""
+        ...
+
+    def send_digest(
+        self,
+        *,
+        text: str,
+        feedback_metadata: FeedbackMetadata | None = None,
+    ) -> DeliveryResult:
+        """Send follow-up digest text through Telegram."""
         ...
 
 
