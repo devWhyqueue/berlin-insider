@@ -13,7 +13,7 @@ from berlin_insider.parser.models import ParsedItem
 _DEFAULT_MODEL = "gpt-5-mini"
 _DEFAULT_TIMEOUT_SECONDS = 20.0
 _DEFAULT_MAX_OUTPUT_TOKENS = 200
-_SENTENCE_SPLIT = re.compile(r"(?<=[.!?])\s+")
+_SENTENCE_SPLIT = re.compile(r"(?<=[.!?])\s+(?=[A-Z])")
 
 
 class SummaryGenerationError(RuntimeError):

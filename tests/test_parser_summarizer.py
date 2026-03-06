@@ -6,7 +6,11 @@ import pytest
 
 from berlin_insider.fetcher.models import SourceId
 from berlin_insider.parser.models import ParsedCategory, ParsedItem, WeekendRelevance
-from berlin_insider.parser.summarizer import NoOpSummaryGenerator, OpenAISummaryGenerator
+from berlin_insider.parser.summarizer import (
+    NoOpSummaryGenerator,
+    OpenAISummaryGenerator,
+    _normalize_single_sentence,
+)
 
 
 def _sample_item() -> ParsedItem:
@@ -41,6 +45,19 @@ def test_openai_summary_from_env_trims_quotes_and_whitespace() -> None:
     assert isinstance(generator, OpenAISummaryGenerator)
     assert generator.model == "gpt-5-mini"
     assert generator.max_output_tokens == 123
+
+
+def test_normalize_single_sentence_preserves_common_abbreviations() -> None:
+    value = (
+        "The Astral Nachtmarkt runs at Astral Junction (Rigaer Str. 86, 10247 Berlin) "
+        "with DJs and curated fashion."
+    )
+    assert _normalize_single_sentence(value) == value
+
+
+def test_normalize_single_sentence_keeps_first_sentence_when_multiple_present() -> None:
+    value = "Doors open at 20:00. Tickets are available online."
+    assert _normalize_single_sentence(value) == "Doors open at 20:00."
 
 
 @pytest.mark.skipif(
