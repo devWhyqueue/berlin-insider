@@ -177,6 +177,8 @@ def test_scheduler_executes_due_run_success_daily(monkeypatch, tmp_path: Path) -
         "https://example.com/primary",
         "https://example.com/alternative",
     ]
+    assert saved.alternative_item is not None
+    assert saved.alternative_item.item_url == "https://example.com/alternative"
 
 
 def test_scheduler_returns_error_when_pipeline_raises(monkeypatch, tmp_path: Path) -> None:

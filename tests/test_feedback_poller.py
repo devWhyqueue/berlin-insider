@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 
 from berlin_insider.digest import DigestKind
 from berlin_insider.feedback.models import SentMessageRecord
+from berlin_insider.formatter.models import AlternativeDigestItem
 from berlin_insider.feedback.store import (
     SqliteFeedbackStore,
     SqliteSentMessageStore,
@@ -12,6 +13,7 @@ from berlin_insider.feedback.store import (
 )
 from berlin_insider.feedback.telegram_poller import poll_feedback_once
 from berlin_insider.messenger.models import DeliveryResult
+from berlin_insider.parser.models import ParsedCategory
 
 
 class _FakeMessenger:
@@ -126,6 +128,15 @@ def test_feedback_poller_daily_downvote_sends_one_alternative(tmp_path: Path) ->
             sent_at="2026-02-23T08:00:00+00:00",
             telegram_message_id="42",
             selected_urls=["https://example.com/primary", "https://example.com/alt"],
+            alternative_item=AlternativeDigestItem(
+                item_url="https://example.com/alt",
+                title="Alternative",
+                summary="Compact alternative summary.",
+                location="Pankow",
+                category=ParsedCategory.EVENT,
+                event_start_at=None,
+                event_end_at=None,
+            ),
         )
     )
     messenger = _FakeMessenger(
@@ -153,4 +164,7 @@ def test_feedback_poller_daily_downvote_sends_one_alternative(tmp_path: Path) ->
 
     assert result.persisted_votes == 1
     assert len(messenger.sent_messages) == 1
+    sent_text = messenger.sent_messages[0]["text"]
+    assert isinstance(sent_text, str)
+    assert "Berlin Insider \\| Tip of the Day" in sent_text
     assert sent_store.get("daily-2026-02-23-abc-alt1") is not None

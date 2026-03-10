@@ -10,6 +10,8 @@ from berlin_insider.curator.store import SqliteSentItemStore
 from berlin_insider.digest import DigestKind
 from berlin_insider.feedback.models import FeedbackEvent, SentMessageRecord
 from berlin_insider.feedback.store import SqliteFeedbackStore, SqliteSentMessageStore
+from berlin_insider.formatter.models import AlternativeDigestItem
+from berlin_insider.parser.models import ParsedCategory
 from berlin_insider.storage.sqlite import ensure_schema, sqlite_connection
 
 
@@ -71,6 +73,15 @@ def test_feedback_events_upsert_deduplicates_by_message_and_user(tmp_path: Path)
             sent_at="2026-02-28T08:00:00+00:00",
             telegram_message_id="42",
             selected_urls=["https://example.com/a"],
+            alternative_item=AlternativeDigestItem(
+                item_url="https://example.com/b",
+                title="Alternative",
+                summary="Short summary",
+                location="Berlin",
+                category=ParsedCategory.EVENT,
+                event_start_at=None,
+                event_end_at=None,
+            ),
         )
     )
 
@@ -132,3 +143,33 @@ def test_ensure_schema_adds_detail_text_column_to_existing_db(tmp_path: Path) ->
     column_names = {str(column[1]) for column in columns}
     assert "detail_text" in column_names
     assert "summary" in column_names
+
+
+def test_sent_message_store_round_trips_alternative_item(tmp_path: Path) -> None:
+    db_path = tmp_path / "berlin_insider.db"
+    store = SqliteSentMessageStore(db_path)
+    store.upsert(
+        SentMessageRecord(
+            message_key="daily-2026-02-28-abc",
+            digest_kind=DigestKind.DAILY,
+            local_date="2026-02-28",
+            sent_at="2026-02-28T08:00:00+00:00",
+            telegram_message_id="42",
+            selected_urls=["https://example.com/a", "https://example.com/b"],
+            alternative_item=AlternativeDigestItem(
+                item_url="https://example.com/b",
+                title="Alternative",
+                summary="Short summary",
+                location="Berlin",
+                category=ParsedCategory.EVENT,
+                event_start_at="2026-02-28T19:30:00+00:00",
+                event_end_at=None,
+            ),
+        )
+    )
+
+    reloaded = store.get("daily-2026-02-28-abc")
+
+    assert reloaded is not None
+    assert reloaded.alternative_item is not None
+    assert reloaded.alternative_item.item_url == "https://example.com/b"

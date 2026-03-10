@@ -37,7 +37,8 @@ CREATE TABLE IF NOT EXISTS sent_messages (
   local_date TEXT NOT NULL,
   sent_at TEXT NOT NULL,
   telegram_message_id TEXT NOT NULL,
-  selected_urls_json TEXT NOT NULL
+  selected_urls_json TEXT NOT NULL,
+  alternative_item_json TEXT
 );
 
 CREATE TABLE IF NOT EXISTS telegram_updates_state (
@@ -121,6 +122,7 @@ def ensure_schema(path: Path) -> None:
         conn.executescript(SCHEMA)
         _ensure_parsed_items_column(conn, column_name="detail_text")
         _ensure_parsed_items_column(conn, column_name="summary")
+        _ensure_sent_messages_column(conn, column_name="alternative_item_json")
 
 
 def _ensure_parsed_items_column(conn: sqlite3.Connection, *, column_name: str) -> None:
@@ -129,6 +131,14 @@ def _ensure_parsed_items_column(conn: sqlite3.Connection, *, column_name: str) -
     if column_name in existing_names:
         return
     conn.execute(f"ALTER TABLE parsed_items ADD COLUMN {column_name} TEXT")
+
+
+def _ensure_sent_messages_column(conn: sqlite3.Connection, *, column_name: str) -> None:
+    columns = conn.execute("PRAGMA table_info(sent_messages)").fetchall()
+    existing_names = {str(column[1]) for column in columns}
+    if column_name in existing_names:
+        return
+    conn.execute(f"ALTER TABLE sent_messages ADD COLUMN {column_name} TEXT")
 
 
 @contextmanager

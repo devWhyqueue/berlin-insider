@@ -5,6 +5,7 @@ from datetime import datetime
 from typing import Literal
 
 from berlin_insider.digest import DigestKind
+from berlin_insider.formatter.models import AlternativeDigestItem
 
 FeedbackVote = Literal["up", "down"]
 
@@ -34,6 +35,7 @@ class SentMessageRecord:
     sent_at: str
     telegram_message_id: str
     selected_urls: list[str]
+    alternative_item: AlternativeDigestItem | None = None
 
 
 @dataclass(slots=True)

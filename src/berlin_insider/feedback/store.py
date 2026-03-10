@@ -1,13 +1,16 @@
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
-from berlin_insider.digest import DigestKind
 from berlin_insider.feedback.models import (
     FeedbackEvent,
     SentMessageRecord,
     TelegramUpdatesState,
+)
+from berlin_insider.storage.sent_message_serialization import (
+    feedback_event_values,
+    row_to_sent_record,
+    sent_message_values,
 )
 from berlin_insider.storage.sqlite import ensure_schema, sqlite_connection
 
@@ -38,14 +41,16 @@ INSERT INTO sent_messages (
     local_date,
     sent_at,
     telegram_message_id,
-    selected_urls_json
-) VALUES (?, ?, ?, ?, ?, ?)
+    selected_urls_json,
+    alternative_item_json
+) VALUES (?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(message_key) DO UPDATE SET
     digest_kind = excluded.digest_kind,
     local_date = excluded.local_date,
     sent_at = excluded.sent_at,
     telegram_message_id = excluded.telegram_message_id,
-    selected_urls_json = excluded.selected_urls_json
+    selected_urls_json = excluded.selected_urls_json,
+    alternative_item_json = excluded.alternative_item_json
 """
 
 _GET_SENT_MESSAGE_SQL = """
@@ -55,7 +60,8 @@ SELECT
     local_date,
     sent_at,
     telegram_message_id,
-    selected_urls_json
+    selected_urls_json,
+    alternative_item_json
 FROM sent_messages
 WHERE message_key = ?
 """
@@ -69,7 +75,7 @@ class SqliteFeedbackStore:
     def upsert(self, event: FeedbackEvent) -> None:
         """Insert or update a vote using (message_key, telegram_user_id) uniqueness."""
         with sqlite_connection(self._db_path) as conn:
-            conn.execute(_UPSERT_FEEDBACK_SQL, _feedback_event_values(event))
+            conn.execute(_UPSERT_FEEDBACK_SQL, feedback_event_values(event))
             conn.commit()
 
     def count(self) -> int:
@@ -118,7 +124,7 @@ class SqliteSentMessageStore:
     def upsert(self, record: SentMessageRecord) -> None:
         """Insert or replace metadata for a sent Telegram digest message."""
         with sqlite_connection(self._db_path) as conn:
-            conn.execute(_UPSERT_SENT_MESSAGE_SQL, _sent_message_values(record))
+            conn.execute(_UPSERT_SENT_MESSAGE_SQL, sent_message_values(record))
             conn.commit()
 
     def get(self, message_key: str) -> SentMessageRecord | None:
@@ -127,62 +133,4 @@ class SqliteSentMessageStore:
             row = conn.execute(_GET_SENT_MESSAGE_SQL, (message_key,)).fetchone()
         if row is None:
             return None
-        return _row_to_sent_record(row)
-
-
-def _row_to_sent_record(row) -> SentMessageRecord | None:  # noqa: ANN001
-    message_key, digest_kind_raw, local_date, sent_at, telegram_message_id, selected_urls_json = row
-    if not isinstance(message_key, str):
-        return None
-    if not isinstance(local_date, str):
-        return None
-    if not isinstance(sent_at, str):
-        return None
-    if not isinstance(telegram_message_id, str):
-        return None
-    if not isinstance(selected_urls_json, str):
-        return None
-    try:
-        digest_kind = DigestKind(str(digest_kind_raw))
-    except ValueError:
-        return None
-    try:
-        selected_urls = json.loads(selected_urls_json)
-    except json.JSONDecodeError:
-        return None
-    if not isinstance(selected_urls, list) or not all(
-        isinstance(url, str) for url in selected_urls
-    ):
-        return None
-    return SentMessageRecord(
-        message_key=message_key,
-        digest_kind=digest_kind,
-        local_date=local_date,
-        sent_at=sent_at,
-        telegram_message_id=telegram_message_id,
-        selected_urls=selected_urls,
-    )
-
-
-def _feedback_event_values(event: FeedbackEvent) -> tuple[str, str, str, int, str, str, str, str]:
-    return (
-        event.message_key,
-        event.digest_kind.value,
-        event.vote,
-        event.telegram_user_id,
-        event.chat_id,
-        event.message_id,
-        event.voted_at,
-        event.updated_at,
-    )
-
-
-def _sent_message_values(record: SentMessageRecord) -> tuple[str, str, str, str, str, str]:
-    return (
-        record.message_key,
-        record.digest_kind.value,
-        record.local_date,
-        record.sent_at,
-        record.telegram_message_id,
-        json.dumps(record.selected_urls, ensure_ascii=False),
-    )
+        return row_to_sent_record(row)

@@ -7,6 +7,7 @@ from berlin_insider.curator.models import DropReason
 from berlin_insider.digest import DigestKind
 from berlin_insider.feedback.models import SentMessageRecord
 from berlin_insider.feedback.store import SqliteSentMessageStore
+from berlin_insider.formatter.models import AlternativeDigestItem
 from berlin_insider.pipeline import FullPipelineRunResult
 from berlin_insider.scheduler.models import ScheduleConfig, SchedulerState
 
@@ -75,6 +76,10 @@ def persist_sent_message(
                 digest_kind=digest_kind,
                 pipeline_result=pipeline_result,
             ),
+            alternative_item=alternative_item_for_sent_message(
+                digest_kind=digest_kind,
+                pipeline_result=pipeline_result,
+            ),
         )
     )
 
@@ -98,6 +103,60 @@ def selected_urls_for_sent_message(
     if alternative_url is None:
         return [primary_url]
     return [primary_url, alternative_url]
+
+
+def alternative_item_for_sent_message(
+    *,
+    digest_kind: DigestKind,
+    pipeline_result: FullPipelineRunResult,
+) -> AlternativeDigestItem | None:
+    """Return one persisted alternative daily item for feedback follow-ups."""
+    if digest_kind != DigestKind.DAILY:
+        return None
+    selected_urls = [item.item.item_url for item in pipeline_result.curate_result.selected_items]
+    if not selected_urls:
+        return None
+    return _first_alternative_item(
+        pipeline_result=pipeline_result,
+        excluded_urls={selected_urls[0]},
+    )
+
+
+def _first_alternative_item(
+    *,
+    pipeline_result: FullPipelineRunResult,
+    excluded_urls: set[str],
+) -> AlternativeDigestItem | None:
+    for source_result in pipeline_result.curate_result.results:
+        for dropped in source_result.dropped_items:
+            if not _is_allowed_alternative_drop(dropped.reason):
+                continue
+            item = dropped.item
+            url = item.item_url.strip()
+            if not url or url in excluded_urls:
+                continue
+            return _to_alternative_item(url=url, dropped_item=item)
+    return None
+
+
+def _is_allowed_alternative_drop(reason: DropReason) -> bool:
+    return reason in {DropReason.LOW_SCORE, DropReason.UNKNOWN_WEEKEND_RELEVANCE}
+
+
+def _to_alternative_item(*, url: str, dropped_item) -> AlternativeDigestItem:  # noqa: ANN001
+    return AlternativeDigestItem(
+        item_url=url,
+        title=dropped_item.title,
+        summary=dropped_item.summary,
+        location=dropped_item.location,
+        category=dropped_item.category,
+        event_start_at=dropped_item.event_start_at.isoformat()
+        if dropped_item.event_start_at is not None
+        else None,
+        event_end_at=dropped_item.event_end_at.isoformat()
+        if dropped_item.event_end_at is not None
+        else None,
+    )
 
 
 def daily_alternative_url(

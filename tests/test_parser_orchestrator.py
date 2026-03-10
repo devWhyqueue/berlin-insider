@@ -156,6 +156,34 @@ def test_parser_keeps_item_when_summary_generator_fails() -> None:
     assert any("Failed to summarize item" in warning for warning in parsed.results[0].warnings)
 
 
+def test_parser_does_not_persist_partial_summary_text(monkeypatch) -> None:
+    class _FailingSummaryGenerator:
+        def summarize(self, item):  # noqa: ANN001, ANN202
+            raise RuntimeError("summary response incomplete: max_output_tokens")
+
+    fetch_result = FetchRunResult(
+        started_at=datetime(2026, 2, 27, 8, 0, tzinfo=UTC),
+        finished_at=datetime(2026, 2, 27, 9, 0, tzinfo=UTC),
+        results=[
+            SourceFetchResult(
+                source_id=SourceId.MITVERGNUEGEN,
+                status=FetchStatus.SUCCESS,
+                items=[_fetched_item(SourceId.MITVERGNUEGEN, "https://example.com/a")],
+                warnings=[],
+                error_message=None,
+                duration_ms=1,
+            )
+        ],
+        total_items=1,
+        failed_sources=[],
+    )
+
+    parsed = Parser(summary_generator=_FailingSummaryGenerator()).run(fetch_result)
+
+    assert parsed.results[0].items[0].summary is None
+    assert all("of her" not in item.summary for item in parsed.results[0].items if item.summary)
+
+
 def test_parser_skips_summary_call_when_cached_summary_present() -> None:
     calls = {"count": 0}
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+from types import SimpleNamespace
 
 import pytest
 
@@ -9,7 +10,9 @@ from berlin_insider.parser.models import ParsedCategory, ParsedItem, WeekendRele
 from berlin_insider.parser.summarizer import (
     NoOpSummaryGenerator,
     OpenAISummaryGenerator,
-    _normalize_single_sentence,
+    SummaryGenerationError,
+    _max_output_tokens_for_attempt,
+    _normalize_summary_text,
 )
 
 
@@ -40,24 +43,82 @@ def test_openai_summary_from_env_trims_quotes_and_whitespace() -> None:
             "OPENAI_API_KEY": "  'sk-test-123'  ",
             "OPENAI_SUMMARY_MODEL": "gpt-5-mini",
             "OPENAI_SUMMARY_MAX_OUTPUT_TOKENS": "123",
+            "OPENAI_SUMMARY_RETRY_ATTEMPTS": "4",
         }
     )
     assert isinstance(generator, OpenAISummaryGenerator)
     assert generator.model == "gpt-5-mini"
     assert generator.max_output_tokens == 123
+    assert generator.retry_attempts == 4
 
 
-def test_normalize_single_sentence_preserves_common_abbreviations() -> None:
-    value = (
-        "The Astral Nachtmarkt runs at Astral Junction (Rigaer Str. 86, 10247 Berlin) "
-        "with DJs and curated fashion."
-    )
-    assert _normalize_single_sentence(value) == value
+def test_normalize_summary_text_collapses_whitespace() -> None:
+    value = "The Astral Nachtmarkt runs\n\nat Astral Junction with DJs."
+    assert _normalize_summary_text(value) == "The Astral Nachtmarkt runs at Astral Junction with DJs."
 
 
-def test_normalize_single_sentence_keeps_first_sentence_when_multiple_present() -> None:
+def test_normalize_summary_text_preserves_two_short_sentences() -> None:
     value = "Doors open at 20:00. Tickets are available online."
-    assert _normalize_single_sentence(value) == "Doors open at 20:00."
+    assert _normalize_summary_text(value) == value
+
+
+def test_summary_generator_retries_when_response_is_incomplete() -> None:
+    calls: list[int] = []
+
+    class _FakeResponses:
+        def create(self, **kwargs):  # noqa: ANN003, ANN202
+            calls.append(kwargs["max_output_tokens"])
+            if len(calls) == 1:
+                return SimpleNamespace(
+                    status="incomplete",
+                    incomplete_details=SimpleNamespace(reason="max_output_tokens"),
+                    output_text="On Tuesday the Bettina von Arnim Library hosts",
+                )
+            return SimpleNamespace(
+                status="completed",
+                incomplete_details=None,
+                output_text=(
+                    "On Tuesday the Bettina von Arnim Library hosts a brief reading by Monika "
+                    "Groth with free entry in Pankow."
+                ),
+            )
+
+    generator = OpenAISummaryGenerator(
+        client=SimpleNamespace(responses=_FakeResponses()),
+        max_output_tokens=200,
+        retry_attempts=2,
+    )
+
+    summary = generator.summarize(_sample_item())
+
+    assert summary is not None
+    assert summary.startswith("On Tuesday")
+    assert calls == [200, 300]
+
+
+def test_summary_generator_raises_when_retries_exhausted() -> None:
+    class _FakeResponses:
+        def create(self, **kwargs):  # noqa: ANN003, ANN202
+            return SimpleNamespace(
+                status="incomplete",
+                incomplete_details=SimpleNamespace(reason="max_output_tokens"),
+                output_text="Clipped text",
+            )
+
+    generator = OpenAISummaryGenerator(
+        client=SimpleNamespace(responses=_FakeResponses()),
+        max_output_tokens=200,
+        retry_attempts=1,
+    )
+
+    with pytest.raises(SummaryGenerationError, match="max_output_tokens"):
+        generator.summarize(_sample_item())
+
+
+def test_max_output_tokens_grows_by_attempt() -> None:
+    assert _max_output_tokens_for_attempt(base_tokens=200, attempt=0) == 200
+    assert _max_output_tokens_for_attempt(base_tokens=200, attempt=1) == 300
+    assert _max_output_tokens_for_attempt(base_tokens=200, attempt=2) == 400
 
 
 @pytest.mark.skipif(

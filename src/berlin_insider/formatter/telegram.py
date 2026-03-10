@@ -6,7 +6,7 @@ from datetime import datetime
 
 from berlin_insider.curator.models import CuratedItem, CurateRunResult
 from berlin_insider.digest import DigestKind
-from berlin_insider.formatter.models import DigestFormatConfig
+from berlin_insider.formatter.models import AlternativeDigestItem, DigestFormatConfig
 from berlin_insider.parser.models import ParsedCategory, ParsedItem
 
 _CATEGORY_ORDER = [
@@ -89,6 +89,22 @@ def render_daily_telegram_digest(
     return "\n".join(lines)
 
 
+def render_daily_telegram_alternative(
+    item: AlternativeDigestItem,
+    *,
+    config: DigestFormatConfig | None = None,
+) -> str:
+    """Render one persisted alternative item in daily Telegram format."""
+    cfg = config or DigestFormatConfig()
+    lines = [
+        _escape_text("Berlin Insider | Tip of the Day"),
+        "",
+        _render_persisted_item(item, cfg=cfg),
+        "",
+    ]
+    return "\n".join(lines)
+
+
 def _build_header() -> list[str]:
     return [
         _escape_text("Berlin Insider | Weekend Picks"),
@@ -136,15 +152,42 @@ def _group_items(items: list[CuratedItem]) -> dict[ParsedCategory, list[CuratedI
 
 def _render_bullet(curated_item: CuratedItem, *, cfg: DigestFormatConfig) -> str:
     item: ParsedItem = curated_item.item
-    title = _escape_text(item.title or "Untitled")
-    url = _escape_url(item.item_url)
+    return _render_item_fields(
+        title=item.title,
+        item_url=item.item_url,
+        location=item.location,
+        summary=item.summary,
+        cfg=cfg,
+    )
+
+
+def _render_persisted_item(item: AlternativeDigestItem, *, cfg: DigestFormatConfig) -> str:
+    return _render_item_fields(
+        title=item.title,
+        item_url=item.item_url,
+        location=item.location,
+        summary=item.summary,
+        cfg=cfg,
+    )
+
+
+def _render_item_fields(
+    *,
+    title: str | None,
+    item_url: str,
+    location: str | None,
+    summary: str | None,
+    cfg: DigestFormatConfig,
+) -> str:
+    title = _escape_text(title or "Untitled")
+    url = _escape_url(item_url)
     parts = [f"\\- [{title}]({url})"]
-    if cfg.show_location_when_present and item.location:
-        parts.append(_escape_text(item.location))
+    if cfg.show_location_when_present and location:
+        parts.append(_escape_text(location))
     base_line = " \\| ".join(parts)
-    if item.summary is None:
+    if summary is None:
         return base_line
-    return f"{base_line}\n{_escape_text(item.summary)}"
+    return f"{base_line}\n{_escape_text(summary)}"
 
 
 def _needs_fallback_note(curate: CurateRunResult) -> bool:
