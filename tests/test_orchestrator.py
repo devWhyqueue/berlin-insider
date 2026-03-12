@@ -1,4 +1,5 @@
 from datetime import UTC, datetime
+from typing import Any, cast
 
 from berlin_insider.fetcher.base import SourceDefinition
 from berlin_insider.fetcher.models import (
@@ -28,7 +29,7 @@ class _FakeAdapter:
 def test_fetcher_runs_with_selected_source() -> None:
     fetcher = Fetcher()
     source_id = SourceId.MITVERGNUEGEN
-    fetcher._sources = {source_id: _FakeAdapter(source_id)}  # noqa: SLF001
+    cast(Any, fetcher)._sources = {source_id: _FakeAdapter(source_id)}  # noqa: SLF001
     result = fetcher.run(
         context=FetchContext(
             user_agent="test-agent",

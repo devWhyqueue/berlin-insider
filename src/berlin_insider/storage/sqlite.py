@@ -7,7 +7,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 SCHEMA = """
-CREATE TABLE IF NOT EXISTS scheduler_state (
+CREATE TABLE IF NOT EXISTS worker_state (
   id INTEGER PRIMARY KEY CHECK (id = 1),
   last_attempt_at TEXT,
   last_run_date_local TEXT,
@@ -24,21 +24,43 @@ CREATE TABLE IF NOT EXISTS scheduler_state (
   last_run_date_by_kind_json TEXT NOT NULL DEFAULT '{}'
 );
 
-CREATE TABLE IF NOT EXISTS sent_links (
-  digest_kind TEXT NOT NULL,
-  canonical_url TEXT NOT NULL,
-  first_sent_at TEXT NOT NULL,
-  PRIMARY KEY (digest_kind, canonical_url)
+CREATE TABLE IF NOT EXISTS sources (
+  source_id TEXT PRIMARY KEY,
+  source_url TEXT NOT NULL,
+  adapter_kind TEXT NOT NULL,
+  updated_at TEXT NOT NULL
 );
 
-CREATE TABLE IF NOT EXISTS sent_messages (
+CREATE TABLE IF NOT EXISTS items (
+  item_id INTEGER PRIMARY KEY AUTOINCREMENT,
+  canonical_url TEXT NOT NULL UNIQUE,
+  source_id TEXT NOT NULL,
+  original_url TEXT,
+  title TEXT,
+  description TEXT,
+  summary TEXT,
+  event_start_at TEXT,
+  event_end_at TEXT,
+  location TEXT,
+  category TEXT,
+  category_confidence REAL,
+  weekend_relevance TEXT,
+  weekend_confidence REAL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  FOREIGN KEY (source_id) REFERENCES sources (source_id)
+);
+
+CREATE TABLE IF NOT EXISTS message_deliveries (
   message_key TEXT PRIMARY KEY,
   digest_kind TEXT NOT NULL,
   local_date TEXT NOT NULL,
   sent_at TEXT NOT NULL,
   telegram_message_id TEXT NOT NULL,
-  selected_urls_json TEXT NOT NULL,
-  alternative_item_json TEXT
+  primary_item_id INTEGER NOT NULL,
+  alternative_item_id INTEGER,
+  FOREIGN KEY (primary_item_id) REFERENCES items (item_id),
+  FOREIGN KEY (alternative_item_id) REFERENCES items (item_id)
 );
 
 CREATE TABLE IF NOT EXISTS telegram_updates_state (
@@ -48,51 +70,12 @@ CREATE TABLE IF NOT EXISTS telegram_updates_state (
 
 CREATE TABLE IF NOT EXISTS feedback_events (
   message_key TEXT NOT NULL,
-  digest_kind TEXT NOT NULL,
-  vote TEXT NOT NULL CHECK (vote IN ('up', 'down')),
   telegram_user_id INTEGER NOT NULL,
-  chat_id TEXT NOT NULL,
-  message_id TEXT NOT NULL,
+  vote TEXT NOT NULL CHECK (vote IN ('up', 'down')),
   voted_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
   PRIMARY KEY (message_key, telegram_user_id),
-  FOREIGN KEY (message_key) REFERENCES sent_messages (message_key) ON DELETE CASCADE
-);
-
-CREATE TABLE IF NOT EXISTS source_websites (
-  source_id TEXT PRIMARY KEY,
-  source_url TEXT NOT NULL,
-  adapter_kind TEXT NOT NULL,
-  updated_at TEXT NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS parse_runs (
-  run_id TEXT PRIMARY KEY,
-  started_at TEXT NOT NULL,
-  finished_at TEXT NOT NULL,
-  total_items INTEGER NOT NULL,
-  failed_sources_json TEXT NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS parsed_items (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  run_id TEXT NOT NULL,
-  source_id TEXT NOT NULL,
-  item_url TEXT NOT NULL,
-  title TEXT,
-  description TEXT,
-  detail_text TEXT,
-  summary TEXT,
-  event_start_at TEXT,
-  event_end_at TEXT,
-  location TEXT,
-  category TEXT NOT NULL,
-  category_confidence REAL NOT NULL,
-  weekend_relevance TEXT NOT NULL,
-  weekend_confidence REAL NOT NULL,
-  parse_notes_json TEXT NOT NULL,
-  raw_json TEXT NOT NULL,
-  FOREIGN KEY (run_id) REFERENCES parse_runs (run_id) ON DELETE CASCADE
+  FOREIGN KEY (message_key) REFERENCES message_deliveries (message_key) ON DELETE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS detail_cache (
@@ -109,42 +92,25 @@ CREATE TABLE IF NOT EXISTS detail_cache (
   updated_at TEXT NOT NULL
 );
 
-CREATE INDEX IF NOT EXISTS idx_parsed_items_run_id ON parsed_items (run_id);
-CREATE INDEX IF NOT EXISTS idx_parsed_items_source_id ON parsed_items (source_id);
+CREATE INDEX IF NOT EXISTS idx_items_source_id ON items (source_id);
+CREATE INDEX IF NOT EXISTS idx_message_deliveries_primary_item_id ON message_deliveries (primary_item_id);
+CREATE INDEX IF NOT EXISTS idx_message_deliveries_alternative_item_id ON message_deliveries (alternative_item_id);
 CREATE INDEX IF NOT EXISTS idx_detail_cache_last_used_at ON detail_cache (last_used_at);
 CREATE INDEX IF NOT EXISTS idx_detail_cache_source_id ON detail_cache (source_id);
 """
 
 
 def ensure_schema(path: Path) -> None:
-    """Create the SQLite schema if it does not already exist."""
+    """Create the target schema."""
     path.parent.mkdir(parents=True, exist_ok=True)
     with sqlite_connection(path) as conn:
         conn.executescript(SCHEMA)
-        _ensure_parsed_items_column(conn, column_name="detail_text")
-        _ensure_parsed_items_column(conn, column_name="summary")
-        _ensure_sent_messages_column(conn, column_name="alternative_item_json")
         _ensure_detail_cache_column(
             conn,
             column_name="detail_metadata_json",
             definition="TEXT NOT NULL DEFAULT '{}'",
         )
-
-
-def _ensure_parsed_items_column(conn: sqlite3.Connection, *, column_name: str) -> None:
-    columns = conn.execute("PRAGMA table_info(parsed_items)").fetchall()
-    existing_names = {str(column[1]) for column in columns}
-    if column_name in existing_names:
-        return
-    conn.execute(f"ALTER TABLE parsed_items ADD COLUMN {column_name} TEXT")
-
-
-def _ensure_sent_messages_column(conn: sqlite3.Connection, *, column_name: str) -> None:
-    columns = conn.execute("PRAGMA table_info(sent_messages)").fetchall()
-    existing_names = {str(column[1]) for column in columns}
-    if column_name in existing_names:
-        return
-    conn.execute(f"ALTER TABLE sent_messages ADD COLUMN {column_name} TEXT")
+        conn.commit()
 
 
 def _ensure_detail_cache_column(

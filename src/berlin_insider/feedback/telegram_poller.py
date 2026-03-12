@@ -8,7 +8,7 @@ from berlin_insider.feedback.ingest import ingest_feedback_update
 from berlin_insider.feedback.models import FeedbackPollResult, TelegramUpdatesState
 from berlin_insider.feedback.store import (
     SqliteFeedbackStore,
-    SqliteSentMessageStore,
+    SqliteMessageDeliveryStore,
     SqliteTelegramUpdatesStateStore,
 )
 from berlin_insider.messenger.models import DeliveryResult, FeedbackMetadata
@@ -49,7 +49,7 @@ def poll_feedback_once(
     messenger: FeedbackMessenger,
     state_store: SqliteTelegramUpdatesStateStore,
     feedback_store: SqliteFeedbackStore,
-    sent_message_store: SqliteSentMessageStore,
+    sent_message_store: SqliteMessageDeliveryStore,
     timeout_seconds: int = 0,
 ) -> FeedbackPollResult:
     """Poll Telegram callbacks once and persist normalized thumbs feedback."""
@@ -82,7 +82,7 @@ def _apply_update(
     counters: _PollCounters,
     messenger: FeedbackMessenger,
     feedback_store: SqliteFeedbackStore,
-    sent_message_store: SqliteSentMessageStore,
+    sent_message_store: SqliteMessageDeliveryStore,
 ) -> None:
     _track_update_id(update, counters)
     result = ingest_feedback_update(

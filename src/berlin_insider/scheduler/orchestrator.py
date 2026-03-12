@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from berlin_insider.digest import DigestKind
-from berlin_insider.feedback.store import SqliteSentMessageStore
+from berlin_insider.feedback.store import SqliteMessageDeliveryStore
 from berlin_insider.messenger.models import FeedbackMetadata, Messenger, MessengerError
 from berlin_insider.messenger.telegram import TelegramMessenger
 from berlin_insider.pipeline import build_fetch_context, run_full_pipeline
@@ -18,6 +18,7 @@ from berlin_insider.scheduler.result_builders import (
     build_success_result,
 )
 from berlin_insider.scheduler.store import SqliteSchedulerStateStore
+from berlin_insider.storage.item_store import SqliteItemStore
 
 
 class Scheduler:
@@ -31,7 +32,7 @@ class Scheduler:
         force: bool,
         now_utc: datetime | None = None,
         messenger: Messenger | None = None,
-        sent_message_store: SqliteSentMessageStore | None = None,
+        sent_message_store: SqliteMessageDeliveryStore | None = None,
     ) -> ScheduleRunResult:
         """Run one scheduler cycle with due-check, state write, and pipeline execution."""
         reference_now = now_utc or datetime.now(UTC)
@@ -59,7 +60,7 @@ def _run_once_cycle(
     reference_now: datetime,
     state: SchedulerState,
     messenger: Messenger | None,
-    sent_message_store: SqliteSentMessageStore | None,
+    sent_message_store: SqliteMessageDeliveryStore | None,
 ) -> ScheduleRunResult:
     due_state = _resolve_due_state(
         now_utc=reference_now, config=config, state_store=state_store, state=state, force=force
@@ -162,7 +163,7 @@ def _execute_due_run(
     db_path: Path,
     target_items: int,
     messenger: Messenger | None,
-    sent_message_store: SqliteSentMessageStore | None,
+    sent_message_store: SqliteMessageDeliveryStore | None,
 ) -> ScheduleRunResult:
     try:
         pipeline_result = run_full_pipeline(
@@ -205,7 +206,8 @@ def _execute_due_run(
             exc=exc,
         )
     persist_sent_message(
-        store=sent_message_store or SqliteSentMessageStore(db_path),
+        store=sent_message_store or SqliteMessageDeliveryStore(db_path),
+        item_store=SqliteItemStore(db_path),
         message_key=message_key,
         digest_kind=digest_kind,
         local_date=local_date,

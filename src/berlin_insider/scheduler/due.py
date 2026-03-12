@@ -5,11 +5,12 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from berlin_insider.curator.models import DropReason
 from berlin_insider.digest import DigestKind
-from berlin_insider.feedback.models import SentMessageRecord
-from berlin_insider.feedback.store import SqliteSentMessageStore
-from berlin_insider.formatter.models import AlternativeDigestItem
+from berlin_insider.feedback.models import DeliveredItem, MessageDeliveryRecord
+from berlin_insider.feedback.store import SqliteMessageDeliveryStore
+from berlin_insider.parser.models import ParsedItem
 from berlin_insider.pipeline import FullPipelineRunResult
 from berlin_insider.scheduler.models import ScheduleConfig, SchedulerState
+from berlin_insider.storage.item_store import SqliteItemStore
 
 _WEEKDAY_TO_INDEX = {
     "monday": 0,
@@ -28,7 +29,7 @@ def is_due(
     config: ScheduleConfig,
     state: SchedulerState,
 ) -> tuple[bool, str, str, DigestKind | None]:
-    """Return due decision, reason, local date string, and digest kind."""
+    """Return due state, reason, local date, and digest kind for the current time."""
     local_now = _local_now(now_utc, timezone_name=config.timezone)
     local_date = local_now.date().isoformat()
     expected_weekday = _WEEKDAY_TO_INDEX.get(config.weekend_weekday.lower())
@@ -46,7 +47,7 @@ def is_due(
 
 
 def expected_digest_kind(*, now_utc: datetime, config: ScheduleConfig) -> DigestKind | None:
-    """Return scheduled digest kind for local date, ignoring time and run history."""
+    """Return the scheduled digest kind for the local date, ignoring run history."""
     local_now = _local_now(now_utc, timezone_name=config.timezone)
     expected_weekday = _WEEKDAY_TO_INDEX.get(config.weekend_weekday.lower())
     if expected_weekday is None:
@@ -56,7 +57,8 @@ def expected_digest_kind(*, now_utc: datetime, config: ScheduleConfig) -> Digest
 
 def persist_sent_message(
     *,
-    store: SqliteSentMessageStore,
+    store: SqliteMessageDeliveryStore,
+    item_store: SqliteItemStore,
     message_key: str,
     digest_kind: DigestKind,
     local_date: str,
@@ -64,117 +66,89 @@ def persist_sent_message(
     message_id: str,
     pipeline_result: FullPipelineRunResult,
 ) -> None:
-    """Persist sent-message metadata and include one daily fallback URL when available."""
+    """Persist one delivered message with direct durable item references."""
+    selected_items = pipeline_result.curate_result.selected_items
+    if not selected_items:
+        return
+    primary_item = _to_delivered_item(_get_or_persist_item(item_store, selected_items[0].item))
+    alternative = alternative_item_for_sent_message(
+        digest_kind=digest_kind,
+        pipeline_result=pipeline_result,
+        item_store=item_store,
+    )
     store.upsert(
-        SentMessageRecord(
+        MessageDeliveryRecord(
             message_key=message_key,
             digest_kind=digest_kind,
             local_date=local_date,
             sent_at=delivered_at,
             telegram_message_id=message_id,
-            selected_urls=selected_urls_for_sent_message(
-                digest_kind=digest_kind,
-                pipeline_result=pipeline_result,
-            ),
-            alternative_item=alternative_item_for_sent_message(
-                digest_kind=digest_kind,
-                pipeline_result=pipeline_result,
-            ),
+            primary_item=primary_item,
+            alternative_item=alternative,
         )
     )
-
-
-def selected_urls_for_sent_message(
-    *,
-    digest_kind: DigestKind,
-    pipeline_result: FullPipelineRunResult,
-) -> list[str]:
-    """Return URLs to store for sent-message feedback workflows."""
-    selected_urls = [item.item.item_url for item in pipeline_result.curate_result.selected_items]
-    if digest_kind != DigestKind.DAILY:
-        return selected_urls
-    if not selected_urls:
-        return []
-    primary_url = selected_urls[0]
-    alternative_url = daily_alternative_url(
-        excluded_urls={primary_url},
-        pipeline_result=pipeline_result,
-    )
-    if alternative_url is None:
-        return [primary_url]
-    return [primary_url, alternative_url]
 
 
 def alternative_item_for_sent_message(
     *,
     digest_kind: DigestKind,
     pipeline_result: FullPipelineRunResult,
-) -> AlternativeDigestItem | None:
-    """Return one persisted alternative daily item for feedback follow-ups."""
+    item_store: SqliteItemStore,
+) -> DeliveredItem | None:
+    """Resolve one persisted alternative item for daily follow-up messaging."""
     if digest_kind != DigestKind.DAILY:
         return None
     selected_urls = [item.item.item_url for item in pipeline_result.curate_result.selected_items]
     if not selected_urls:
         return None
-    return _first_alternative_item(
+    alternative_item = _first_alternative_parsed_item(
         pipeline_result=pipeline_result,
         excluded_urls={selected_urls[0]},
     )
+    if alternative_item is None:
+        return None
+    return _to_delivered_item(_get_or_persist_item(item_store, alternative_item))
 
 
-def _first_alternative_item(
+def _first_alternative_parsed_item(
     *,
     pipeline_result: FullPipelineRunResult,
     excluded_urls: set[str],
-) -> AlternativeDigestItem | None:
+) -> ParsedItem | None:
     for source_result in pipeline_result.curate_result.results:
         for dropped in source_result.dropped_items:
-            if not _is_allowed_alternative_drop(dropped.reason):
+            if dropped.reason not in {DropReason.LOW_SCORE, DropReason.UNKNOWN_WEEKEND_RELEVANCE}:
                 continue
             item = dropped.item
             url = item.item_url.strip()
             if not url or url in excluded_urls:
                 continue
-            return _to_alternative_item(url=url, dropped_item=item)
+            return item
     return None
 
 
-def _is_allowed_alternative_drop(reason: DropReason) -> bool:
-    return reason in {DropReason.LOW_SCORE, DropReason.UNKNOWN_WEEKEND_RELEVANCE}
+def _get_or_persist_item(item_store: SqliteItemStore, item: ParsedItem):
+    record = item_store.get_by_url(item.item_url)
+    if record is not None:
+        return record
+    item_store.upsert_item(item)
+    reloaded = item_store.get_by_url(item.item_url)
+    if reloaded is None:
+        raise ValueError(f"failed to persist item for {item.item_url}")
+    return reloaded
 
 
-def _to_alternative_item(*, url: str, dropped_item) -> AlternativeDigestItem:  # noqa: ANN001
-    return AlternativeDigestItem(
-        item_url=url,
-        title=dropped_item.title,
-        summary=dropped_item.summary,
-        location=dropped_item.location,
-        category=dropped_item.category,
-        event_start_at=dropped_item.event_start_at.isoformat()
-        if dropped_item.event_start_at is not None
-        else None,
-        event_end_at=dropped_item.event_end_at.isoformat()
-        if dropped_item.event_end_at is not None
-        else None,
+def _to_delivered_item(item_record) -> DeliveredItem:  # noqa: ANN001
+    return DeliveredItem(
+        item_id=item_record.item_id,
+        canonical_url=item_record.canonical_url,
+        title=item_record.title,
+        summary=item_record.summary,
+        location=item_record.location,
+        category=item_record.category,
+        event_start_at=item_record.event_start_at,
+        event_end_at=item_record.event_end_at,
     )
-
-
-def daily_alternative_url(
-    *,
-    excluded_urls: set[str],
-    pipeline_result: FullPipelineRunResult,
-) -> str | None:
-    """Choose one non-selected daily fallback URL from dropped low-priority candidates."""
-    allowed_drop_reasons = {DropReason.LOW_SCORE, DropReason.UNKNOWN_WEEKEND_RELEVANCE}
-    for source_result in pipeline_result.curate_result.results:
-        for dropped in source_result.dropped_items:
-            if dropped.reason not in allowed_drop_reasons:
-                continue
-            url = dropped.item.item_url.strip()
-            if not url or url in excluded_urls:
-                continue
-            return url
-    return None
 
 
 def _scheduled_time_for_kind(*, digest_kind: DigestKind, config: ScheduleConfig) -> tuple[int, int]:

@@ -1,4 +1,5 @@
 from datetime import UTC, datetime
+from typing import Any, cast
 
 from berlin_insider.curator.config import CuratorConfig
 from berlin_insider.curator.orchestrator import Curator
@@ -46,7 +47,9 @@ class _SmokeAdapter:
 
 def test_smoke_all_sources_reach_curate_stage() -> None:
     fetcher = Fetcher()
-    fetcher._sources = {source_id: _SmokeAdapter(source_id) for source_id in SourceId}  # noqa: SLF001
+    cast(Any, fetcher)._sources = {
+        source_id: _SmokeAdapter(source_id) for source_id in SourceId
+    }  # noqa: SLF001
     fetch = fetcher.run(
         context=FetchContext(
             user_agent="test-agent",

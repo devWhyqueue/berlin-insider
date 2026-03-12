@@ -14,8 +14,8 @@ from berlin_insider.fetcher.orchestrator import Fetcher
 from berlin_insider.formatter import render_telegram_digest
 from berlin_insider.parser.models import ParseRunResult
 from berlin_insider.parser.orchestrator import Parser
-from berlin_insider.storage.content_store import persist_parse_run, upsert_source_websites
 from berlin_insider.storage.detail_cache import SqliteDetailCacheStore
+from berlin_insider.storage.item_store import persist_items, upsert_source_websites
 
 DEFAULT_USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
@@ -74,7 +74,7 @@ def run_fetch_parse_pipeline(
         )
     fetch_result = Fetcher().run(context=effective_context, source_ids=source_ids)
     parse_result = Parser(detail_cache_store=SqliteDetailCacheStore(db_path)).run(fetch_result)
-    persist_parse_run(db_path, parse_result)
+    persist_items(db_path, parse_result)
     return fetch_result, parse_result
 
 

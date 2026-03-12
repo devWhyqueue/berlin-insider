@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 from types import SimpleNamespace
+from typing import Any, cast
 
 import pytest
 
@@ -84,7 +85,7 @@ def test_summary_generator_retries_when_response_is_incomplete() -> None:
             )
 
     generator = OpenAISummaryGenerator(
-        client=SimpleNamespace(responses=_FakeResponses()),
+        client=cast(Any, SimpleNamespace(responses=_FakeResponses())),
         max_output_tokens=200,
         retry_attempts=2,
     )
@@ -106,7 +107,7 @@ def test_summary_generator_raises_when_retries_exhausted() -> None:
             )
 
     generator = OpenAISummaryGenerator(
-        client=SimpleNamespace(responses=_FakeResponses()),
+        client=cast(Any, SimpleNamespace(responses=_FakeResponses())),
         max_output_tokens=200,
         retry_attempts=1,
     )

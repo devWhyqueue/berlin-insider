@@ -21,12 +21,12 @@ SELECT
     last_delivery_message_id,
     last_delivery_error,
     last_run_date_by_kind_json
-FROM scheduler_state
+FROM worker_state
 WHERE id = 1
 """
 
 _UPSERT_SCHEDULER_STATE_SQL = """
-INSERT INTO scheduler_state (
+INSERT INTO worker_state (
     id,
     last_attempt_at,
     last_run_date_local,

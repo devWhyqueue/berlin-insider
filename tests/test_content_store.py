@@ -13,20 +13,21 @@ from berlin_insider.parser.models import (
     SourceParseResult,
     WeekendRelevance,
 )
-from berlin_insider.storage.content_store import persist_parse_run, upsert_source_websites
 from berlin_insider.storage.sqlite import sqlite_connection
+from berlin_insider.storage.url_normalize import canonicalize_url
+from berlin_insider.storage.item_store import persist_items, upsert_source_websites
 
 
 def test_upsert_source_websites_inserts_configured_sources(tmp_path: Path) -> None:
     db_path = tmp_path / "berlin_insider.db"
     upsert_source_websites(db_path)
     with sqlite_connection(db_path) as conn:
-        row = conn.execute("SELECT COUNT(*) FROM source_websites").fetchone()
+        row = conn.execute("SELECT COUNT(*) FROM sources").fetchone()
     assert row is not None
     assert row[0] == len(SOURCES)
 
 
-def test_persist_parse_run_stores_run_and_items(tmp_path: Path) -> None:
+def test_persist_items_upserts_deduplicated_items(tmp_path: Path) -> None:
     db_path = tmp_path / "berlin_insider.db"
     parse_result = ParseRunResult(
         started_at=datetime(2026, 2, 28, 8, 0, tzinfo=UTC),
@@ -38,10 +39,10 @@ def test_persist_parse_run_stores_run_and_items(tmp_path: Path) -> None:
                 items=[
                     ParsedItem(
                         source_id=SourceId.MITVERGNUEGEN,
-                        item_url="https://example.com/item",
+                        item_url="https://example.com/item?utm_source=test",
                         title="Item",
                         description="Desc",
-                        detail_text="Long detail text",
+                        summary="Summary",
                         event_start_at=datetime(2026, 2, 28, 18, 0, tzinfo=UTC),
                         event_end_at=None,
                         location="Berlin",
@@ -49,8 +50,6 @@ def test_persist_parse_run_stores_run_and_items(tmp_path: Path) -> None:
                         category_confidence=0.9,
                         weekend_relevance=WeekendRelevance.LIKELY_THIS_WEEKEND,
                         weekend_confidence=0.9,
-                        parse_notes=["ok"],
-                        raw={"fetch_method": "rss"},
                     )
                 ],
                 warnings=[],
@@ -61,18 +60,22 @@ def test_persist_parse_run_stores_run_and_items(tmp_path: Path) -> None:
         total_items=1,
         failed_sources=[],
     )
-    run_id = persist_parse_run(db_path, parse_result)
+
+    persist_items(db_path, parse_result)
+    persist_items(db_path, parse_result)
 
     with sqlite_connection(db_path) as conn:
-        run_row = conn.execute("SELECT run_id, total_items FROM parse_runs").fetchone()
-        item_row = conn.execute(
-            "SELECT source_id, item_url, detail_text FROM parsed_items WHERE run_id = ?",
-            (run_id,),
+        row = conn.execute(
+            """
+            SELECT source_id, canonical_url, title, summary
+            FROM items
+            """
         ).fetchone()
-    assert run_row is not None
-    assert run_row[0] == run_id
-    assert run_row[1] == 1
-    assert item_row is not None
-    assert item_row[0] == SourceId.MITVERGNUEGEN.value
-    assert item_row[1] == "https://example.com/item"
-    assert item_row[2] == "Long detail text"
+        count_row = conn.execute("SELECT COUNT(*) FROM items").fetchone()
+    assert row is not None
+    assert count_row is not None
+    assert count_row[0] == 1
+    assert row[0] == SourceId.MITVERGNUEGEN.value
+    assert row[1] == canonicalize_url("https://example.com/item?utm_source=test")
+    assert row[2] == "Item"
+    assert row[3] == "Summary"

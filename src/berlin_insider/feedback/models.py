@@ -5,7 +5,7 @@ from datetime import datetime
 from typing import Literal
 
 from berlin_insider.digest import DigestKind
-from berlin_insider.formatter.models import AlternativeDigestItem
+from berlin_insider.parser.models import ParsedCategory
 
 FeedbackVote = Literal["up", "down"]
 
@@ -13,11 +13,8 @@ FeedbackVote = Literal["up", "down"]
 @dataclass(slots=True)
 class FeedbackEvent:
     message_key: str
-    digest_kind: DigestKind
     vote: FeedbackVote
     telegram_user_id: int
-    chat_id: str
-    message_id: str
     voted_at: str
     updated_at: str
 
@@ -28,14 +25,26 @@ class TelegramUpdatesState:
 
 
 @dataclass(slots=True)
-class SentMessageRecord:
+class DeliveredItem:
+    item_id: int
+    canonical_url: str
+    title: str | None
+    summary: str | None
+    location: str | None
+    category: ParsedCategory | None
+    event_start_at: str | None
+    event_end_at: str | None
+
+
+@dataclass(slots=True)
+class MessageDeliveryRecord:
     message_key: str
     digest_kind: DigestKind
     local_date: str
     sent_at: str
     telegram_message_id: str
-    selected_urls: list[str]
-    alternative_item: AlternativeDigestItem | None = None
+    primary_item: DeliveredItem
+    alternative_item: DeliveredItem | None = None
 
 
 @dataclass(slots=True)

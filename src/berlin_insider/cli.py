@@ -18,7 +18,7 @@ from berlin_insider.curator.models import CurateRunResult
 from berlin_insider.curator.orchestrator import Curator
 from berlin_insider.curator.store import SqliteSentItemStore
 from berlin_insider.digest import DigestKind
-from berlin_insider.feedback.store import SqliteSentMessageStore
+from berlin_insider.feedback.store import SqliteMessageDeliveryStore
 from berlin_insider.fetcher.models import FetchContext, FetchRunResult, SourceId
 from berlin_insider.fetcher.orchestrator import Fetcher
 from berlin_insider.formatter import render_telegram_digest
@@ -29,7 +29,7 @@ from berlin_insider.scheduler.cli_log import log_schedule_result
 from berlin_insider.scheduler.models import ScheduleConfig
 from berlin_insider.scheduler.orchestrator import Scheduler
 from berlin_insider.scheduler.store import SqliteSchedulerStateStore
-from berlin_insider.storage.content_store import persist_parse_run, upsert_source_websites
+from berlin_insider.storage.item_store import persist_items, upsert_source_websites
 from berlin_insider.worker import Worker, WorkerConfig
 
 logger = logging.getLogger(__name__)
@@ -58,7 +58,7 @@ def _run_fetch_command(args) -> None:  # noqa: ANN001
         _log_fetch_only(fetch_result, json_output=args.json)
         return
     parse_result = Parser().run(fetch_result)
-    persist_parse_run(db_path, parse_result)
+    persist_items(db_path, parse_result)
     if args.parse_only:
         _log_fetch_with_parse(fetch_result, parse_result, json_output=args.json)
         return
@@ -94,7 +94,7 @@ def _run_worker_command(args) -> None:  # noqa: ANN001
             target_items=args.target_items,
             force=True,
             messenger=TelegramMessenger.from_env(),
-            sent_message_store=SqliteSentMessageStore(db_path),
+            sent_message_store=SqliteMessageDeliveryStore(db_path),
         )
         log_schedule_result(logger, result, json_output=False)
         raise SystemExit(result.exit_code)

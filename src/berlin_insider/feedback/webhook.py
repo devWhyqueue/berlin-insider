@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from fastapi import FastAPI, HTTPException
 
 from berlin_insider.feedback.ingest import ingest_feedback_update
-from berlin_insider.feedback.store import SqliteFeedbackStore, SqliteSentMessageStore
+from berlin_insider.feedback.store import SqliteFeedbackStore, SqliteMessageDeliveryStore
 from berlin_insider.messenger.telegram import TelegramMessenger
 
 logger = logging.getLogger(__name__)
@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 class WebhookDependencies:
     messenger: TelegramMessenger
     feedback_store: SqliteFeedbackStore
-    sent_message_store: SqliteSentMessageStore
+    sent_message_store: SqliteMessageDeliveryStore
     secret: str
 
 

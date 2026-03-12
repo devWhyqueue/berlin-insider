@@ -13,7 +13,7 @@ from berlin_insider.digest import DigestKind
 from berlin_insider.fetcher.models import SourceId
 from berlin_insider.messenger.models import DeliveryResult, MessengerError
 import berlin_insider.scheduler.orchestrator as scheduler_module
-from berlin_insider.feedback.store import SqliteSentMessageStore
+from berlin_insider.feedback.store import SqliteMessageDeliveryStore
 from berlin_insider.fetcher.models import FetchRunResult
 from berlin_insider.parser.models import ParsedCategory, ParsedItem, ParseRunResult, WeekendRelevance
 from berlin_insider.pipeline import FullPipelineRunResult
@@ -150,7 +150,7 @@ def test_scheduler_executes_due_run_success_daily(monkeypatch, tmp_path: Path) -
     monkeypatch.setattr(scheduler_module, "run_full_pipeline", _fake_run_full_pipeline)
     store = _MemoryStateStore()
     messenger = _FakeMessenger()
-    sent_message_store = SqliteSentMessageStore(tmp_path / "berlin_insider.db")
+    sent_message_store = SqliteMessageDeliveryStore(tmp_path / "berlin_insider.db")
     result = scheduler_module.Scheduler().run_once(
         state_store=store,  # type: ignore[arg-type]
         config=ScheduleConfig(timezone="UTC"),
@@ -173,12 +173,9 @@ def test_scheduler_executes_due_run_success_daily(monkeypatch, tmp_path: Path) -
     assert messenger.feedback_metadata is not None
     saved = sent_message_store.get(result.message_key or "")
     assert saved is not None
-    assert saved.selected_urls == [
-        "https://example.com/primary",
-        "https://example.com/alternative",
-    ]
+    assert saved.primary_item.canonical_url == "https://example.com/primary"
     assert saved.alternative_item is not None
-    assert saved.alternative_item.item_url == "https://example.com/alternative"
+    assert saved.alternative_item.canonical_url == "https://example.com/alternative"
 
 
 def test_scheduler_returns_error_when_pipeline_raises(monkeypatch, tmp_path: Path) -> None:

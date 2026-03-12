@@ -1,48 +1,81 @@
 from __future__ import annotations
 
 import sqlite3
-from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import pytest
 
-from berlin_insider.curator.store import SqliteSentItemStore
 from berlin_insider.digest import DigestKind
-from berlin_insider.feedback.models import FeedbackEvent, SentMessageRecord
-from berlin_insider.feedback.store import SqliteFeedbackStore, SqliteSentMessageStore
-from berlin_insider.formatter.models import AlternativeDigestItem
+from berlin_insider.feedback.models import DeliveredItem, FeedbackEvent, MessageDeliveryRecord
+from berlin_insider.feedback.store import SqliteFeedbackStore, SqliteMessageDeliveryStore
 from berlin_insider.parser.models import ParsedCategory
 from berlin_insider.storage.sqlite import ensure_schema, sqlite_connection
 
 
-def test_sent_links_dedupe_is_safe_on_insert_conflict(tmp_path: Path) -> None:
-    db_path = tmp_path / "berlin_insider.db"
-    store_a = SqliteSentItemStore(db_path, digest_kind=DigestKind.WEEKEND)
-    store_b = SqliteSentItemStore(db_path, digest_kind=DigestKind.WEEKEND)
-    url = "https://example.com/event?utm_source=test"
-
-    def _mark(store: SqliteSentItemStore) -> None:
-        store.mark_sent([url])
-
-    with ThreadPoolExecutor(max_workers=2) as pool:
-        futures = [pool.submit(_mark, store_a), pool.submit(_mark, store_b)]
-        for future in futures:
-            future.result()
-
+def _insert_source_and_item(db_path: Path, *, url: str = "https://example.com/a") -> DeliveredItem:
+    ensure_schema(db_path)
     with sqlite_connection(db_path) as conn:
-        row = conn.execute(
+        conn.execute(
             """
-            SELECT COUNT(*) AS count
-            FROM sent_links
-            WHERE digest_kind = ? AND canonical_url = ?
+            INSERT INTO sources (source_id, source_url, adapter_kind, updated_at)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(source_id) DO NOTHING
             """,
-            (DigestKind.WEEKEND.value, "https://example.com/event"),
-        ).fetchone()
-    assert row is not None
-    assert row[0] == 1
+            ("test_source", "https://example.com", "test", "2026-02-28T08:00:00+00:00"),
+        )
+        conn.execute(
+            """
+            INSERT INTO items (
+                canonical_url,
+                source_id,
+                original_url,
+                title,
+                description,
+                summary,
+                event_start_at,
+                event_end_at,
+                location,
+                category,
+                category_confidence,
+                weekend_relevance,
+                weekend_confidence,
+                created_at,
+                updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                url,
+                "test_source",
+                url,
+                "Title",
+                None,
+                "Summary",
+                None,
+                None,
+                "Berlin",
+                ParsedCategory.EVENT.value,
+                0.9,
+                "likely_this_weekend",
+                0.9,
+                "2026-02-28T08:00:00+00:00",
+                "2026-02-28T08:00:00+00:00",
+            ),
+        )
+        item_id = int(conn.execute("SELECT item_id FROM items WHERE canonical_url = ?", (url,)).fetchone()[0])
+        conn.commit()
+    return DeliveredItem(
+        item_id=item_id,
+        canonical_url=url,
+        title="Title",
+        summary="Summary",
+        location="Berlin",
+        category=ParsedCategory.EVENT,
+        event_start_at=None,
+        event_end_at=None,
+    )
 
 
-def test_feedback_events_foreign_key_requires_sent_message(tmp_path: Path) -> None:
+def test_feedback_events_foreign_key_requires_message_delivery(tmp_path: Path) -> None:
     db_path = tmp_path / "berlin_insider.db"
     feedback_store = SqliteFeedbackStore(db_path)
 
@@ -50,11 +83,8 @@ def test_feedback_events_foreign_key_requires_sent_message(tmp_path: Path) -> No
         feedback_store.upsert(
             FeedbackEvent(
                 message_key="missing-message",
-                digest_kind=DigestKind.DAILY,
                 vote="up",
                 telegram_user_id=123,
-                chat_id="-1000",
-                message_id="42",
                 voted_at="2026-02-28T08:00:00+00:00",
                 updated_at="2026-02-28T08:00:00+00:00",
             )
@@ -63,36 +93,25 @@ def test_feedback_events_foreign_key_requires_sent_message(tmp_path: Path) -> No
 
 def test_feedback_events_upsert_deduplicates_by_message_and_user(tmp_path: Path) -> None:
     db_path = tmp_path / "berlin_insider.db"
-    sent_message_store = SqliteSentMessageStore(db_path)
+    primary_item = _insert_source_and_item(db_path)
+    message_store = SqliteMessageDeliveryStore(db_path)
     feedback_store = SqliteFeedbackStore(db_path)
-    sent_message_store.upsert(
-        SentMessageRecord(
+    message_store.upsert(
+        MessageDeliveryRecord(
             message_key="daily-2026-02-28-abc",
             digest_kind=DigestKind.DAILY,
             local_date="2026-02-28",
             sent_at="2026-02-28T08:00:00+00:00",
             telegram_message_id="42",
-            selected_urls=["https://example.com/a"],
-            alternative_item=AlternativeDigestItem(
-                item_url="https://example.com/b",
-                title="Alternative",
-                summary="Short summary",
-                location="Berlin",
-                category=ParsedCategory.EVENT,
-                event_start_at=None,
-                event_end_at=None,
-            ),
+            primary_item=primary_item,
         )
     )
 
     feedback_store.upsert(
         FeedbackEvent(
             message_key="daily-2026-02-28-abc",
-            digest_kind=DigestKind.DAILY,
             vote="up",
             telegram_user_id=123,
-            chat_id="-1000",
-            message_id="42",
             voted_at="2026-02-28T08:00:00+00:00",
             updated_at="2026-02-28T08:00:00+00:00",
         )
@@ -100,11 +119,8 @@ def test_feedback_events_upsert_deduplicates_by_message_and_user(tmp_path: Path)
     feedback_store.upsert(
         FeedbackEvent(
             message_key="daily-2026-02-28-abc",
-            digest_kind=DigestKind.DAILY,
             vote="down",
             telegram_user_id=123,
-            chat_id="-1000",
-            message_id="42",
             voted_at="2026-02-28T08:00:00+00:00",
             updated_at="2026-02-28T08:01:00+00:00",
         )
@@ -113,58 +129,20 @@ def test_feedback_events_upsert_deduplicates_by_message_and_user(tmp_path: Path)
     assert feedback_store.count() == 1
 
 
-def test_ensure_schema_adds_detail_text_column_to_existing_db(tmp_path: Path) -> None:
-    db_path = tmp_path / "legacy.db"
-    with sqlite3.connect(db_path) as conn:
-        conn.executescript(
-            """
-            CREATE TABLE parsed_items (
-              id INTEGER PRIMARY KEY AUTOINCREMENT,
-              run_id TEXT NOT NULL,
-              source_id TEXT NOT NULL,
-              item_url TEXT NOT NULL,
-              title TEXT,
-              description TEXT,
-              event_start_at TEXT,
-              event_end_at TEXT,
-              location TEXT,
-              category TEXT NOT NULL,
-              category_confidence REAL NOT NULL,
-              weekend_relevance TEXT NOT NULL,
-              weekend_confidence REAL NOT NULL,
-              parse_notes_json TEXT NOT NULL,
-              raw_json TEXT NOT NULL
-            );
-            """
-        )
-    ensure_schema(db_path)
-    with sqlite_connection(db_path) as conn:
-        columns = conn.execute("PRAGMA table_info(parsed_items)").fetchall()
-    column_names = {str(column[1]) for column in columns}
-    assert "detail_text" in column_names
-    assert "summary" in column_names
-
-
-def test_sent_message_store_round_trips_alternative_item(tmp_path: Path) -> None:
+def test_message_delivery_store_round_trips_alternative_item(tmp_path: Path) -> None:
     db_path = tmp_path / "berlin_insider.db"
-    store = SqliteSentMessageStore(db_path)
+    primary_item = _insert_source_and_item(db_path, url="https://example.com/a")
+    alternative_item = _insert_source_and_item(db_path, url="https://example.com/b")
+    store = SqliteMessageDeliveryStore(db_path)
     store.upsert(
-        SentMessageRecord(
+        MessageDeliveryRecord(
             message_key="daily-2026-02-28-abc",
             digest_kind=DigestKind.DAILY,
             local_date="2026-02-28",
             sent_at="2026-02-28T08:00:00+00:00",
             telegram_message_id="42",
-            selected_urls=["https://example.com/a", "https://example.com/b"],
-            alternative_item=AlternativeDigestItem(
-                item_url="https://example.com/b",
-                title="Alternative",
-                summary="Short summary",
-                location="Berlin",
-                category=ParsedCategory.EVENT,
-                event_start_at="2026-02-28T19:30:00+00:00",
-                event_end_at=None,
-            ),
+            primary_item=primary_item,
+            alternative_item=alternative_item,
         )
     )
 
@@ -172,4 +150,4 @@ def test_sent_message_store_round_trips_alternative_item(tmp_path: Path) -> None
 
     assert reloaded is not None
     assert reloaded.alternative_item is not None
-    assert reloaded.alternative_item.item_url == "https://example.com/b"
+    assert reloaded.alternative_item.canonical_url == "https://example.com/b"

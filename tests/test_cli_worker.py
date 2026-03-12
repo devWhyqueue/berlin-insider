@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any, cast
 
 import pytest
 
@@ -11,7 +12,7 @@ from berlin_insider.cli_parser import build_parser
 
 
 def test_cli_worker_runs_with_config(monkeypatch) -> None:
-    captured: dict[str, object] = {}
+    captured: dict[str, Any] = {}
 
     class _FakeWorker:
         def __init__(self, *, config):  # noqa: ANN001
@@ -41,7 +42,7 @@ def test_cli_worker_runs_with_config(monkeypatch) -> None:
     cli.main()
 
     assert captured["run_called"] is True
-    cfg = captured["config"]
+    cfg = cast(cli.WorkerConfig, captured["config"])
     assert cfg.db_path == Path(".data/test.db")
     assert cfg.webhook_public_base_url == "https://example.com"
     assert cfg.telegram_webhook_secret == "secret123"
@@ -73,7 +74,7 @@ def test_cli_worker_requires_webhook_secret(monkeypatch) -> None:
 
 
 def test_cli_worker_accepts_webhook_ip(monkeypatch) -> None:
-    captured: dict[str, object] = {}
+    captured: dict[str, Any] = {}
 
     class _FakeWorker:
         def __init__(self, *, config):  # noqa: ANN001
@@ -101,12 +102,12 @@ def test_cli_worker_accepts_webhook_ip(monkeypatch) -> None:
     cli.main()
 
     assert captured["run_called"] is True
-    cfg = captured["config"]
+    cfg = cast(cli.WorkerConfig, captured["config"])
     assert cfg.telegram_webhook_ip == "203.0.113.10"
 
 
 def test_cli_worker_run_once_executes_scheduler_force(monkeypatch) -> None:
-    captured: dict[str, object] = {}
+    captured: dict[str, Any] = {}
 
     class _FakeScheduler:
         def run_once(self, **kwargs):  # noqa: ANN003, ANN202
@@ -158,10 +159,10 @@ def test_cli_worker_run_once_executes_scheduler_force(monkeypatch) -> None:
         cli.main()
 
     assert exc.value.code == 0
-    kwargs = captured["kwargs"]
+    kwargs = cast(dict[str, Any], captured["kwargs"])
     assert kwargs["force"] is True
     assert kwargs["db_path"] == Path(".data/test.db")
-    config = kwargs["config"]
+    config = cast(cli.ScheduleConfig, kwargs["config"])
     assert config.timezone == "UTC"
     assert config.weekend_weekday == "sunday"
 

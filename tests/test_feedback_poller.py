@@ -1,19 +1,19 @@
 from __future__ import annotations
 
-from pathlib import Path
 from datetime import UTC, datetime
+from pathlib import Path
 
 from berlin_insider.digest import DigestKind
-from berlin_insider.feedback.models import SentMessageRecord
-from berlin_insider.formatter.models import AlternativeDigestItem
+from berlin_insider.feedback.models import DeliveredItem, MessageDeliveryRecord
 from berlin_insider.feedback.store import (
     SqliteFeedbackStore,
-    SqliteSentMessageStore,
+    SqliteMessageDeliveryStore,
     SqliteTelegramUpdatesStateStore,
 )
 from berlin_insider.feedback.telegram_poller import poll_feedback_once
 from berlin_insider.messenger.models import DeliveryResult
 from berlin_insider.parser.models import ParsedCategory
+from berlin_insider.storage.sqlite import ensure_schema, sqlite_connection
 
 
 class _FakeMessenger:
@@ -44,18 +44,87 @@ class _FakeMessenger:
         )
 
 
-def test_feedback_poller_persists_and_deduplicates_votes(tmp_path: Path) -> None:
-    db_path = tmp_path / "berlin_insider.db"
-    sent_store = SqliteSentMessageStore(db_path)
-    sent_store.upsert(
-        SentMessageRecord(
-            message_key="daily-2026-02-23-abc",
+def _insert_item(db_path: Path, *, url: str, title: str) -> DeliveredItem:
+    ensure_schema(db_path)
+    with sqlite_connection(db_path) as conn:
+        conn.execute(
+            """
+            INSERT INTO sources (source_id, source_url, adapter_kind, updated_at)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(source_id) DO NOTHING
+            """,
+            ("test_source", "https://example.com", "test", "2026-02-23T08:00:00+00:00"),
+        )
+        conn.execute(
+            """
+            INSERT INTO items (
+                canonical_url, source_id, original_url, title, description, summary,
+                event_start_at, event_end_at, location, category, category_confidence,
+                weekend_relevance, weekend_confidence, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                url,
+                "test_source",
+                url,
+                title,
+                None,
+                "Compact alternative summary.",
+                None,
+                None,
+                "Pankow",
+                ParsedCategory.EVENT.value,
+                0.9,
+                "likely_this_weekend",
+                0.9,
+                "2026-02-23T08:00:00+00:00",
+                "2026-02-23T08:00:00+00:00",
+            ),
+        )
+        item_id = int(conn.execute("SELECT item_id FROM items WHERE canonical_url = ?", (url,)).fetchone()[0])
+        conn.commit()
+    return DeliveredItem(
+        item_id=item_id,
+        canonical_url=url,
+        title=title,
+        summary="Compact alternative summary.",
+        location="Pankow",
+        category=ParsedCategory.EVENT,
+        event_start_at=None,
+        event_end_at=None,
+    )
+
+
+def _insert_delivery(
+    db_path: Path,
+    *,
+    message_key: str,
+    primary_url: str,
+    alternative_url: str | None = None,
+) -> SqliteMessageDeliveryStore:
+    primary_item = _insert_item(db_path, url=primary_url, title="Primary")
+    alternative_item = _insert_item(db_path, url=alternative_url, title="Alternative") if alternative_url else None
+    store = SqliteMessageDeliveryStore(db_path)
+    store.upsert(
+        MessageDeliveryRecord(
+            message_key=message_key,
             digest_kind=DigestKind.DAILY,
             local_date="2026-02-23",
             sent_at="2026-02-23T08:00:00+00:00",
             telegram_message_id="42",
-            selected_urls=["https://example.com/a"],
+            primary_item=primary_item,
+            alternative_item=alternative_item,
         )
+    )
+    return store
+
+
+def test_feedback_poller_persists_and_deduplicates_votes(tmp_path: Path) -> None:
+    db_path = tmp_path / "berlin_insider.db"
+    delivery_store = _insert_delivery(
+        db_path,
+        message_key="daily-2026-02-23-abc",
+        primary_url="https://example.com/a",
     )
     updates = [
         {
@@ -84,7 +153,7 @@ def test_feedback_poller_persists_and_deduplicates_votes(tmp_path: Path) -> None
         messenger=messenger,
         state_store=state_store,
         feedback_store=feedback_store,
-        sent_message_store=sent_store,
+        sent_message_store=delivery_store,
     )
     assert result.fetched_updates == 2
     assert result.persisted_votes == 2
@@ -97,7 +166,7 @@ def test_feedback_poller_persists_and_deduplicates_votes(tmp_path: Path) -> None
 
 def test_feedback_poller_ignores_non_feedback_callbacks(tmp_path: Path) -> None:
     db_path = tmp_path / "berlin_insider.db"
-    sent_store = SqliteSentMessageStore(db_path)
+    delivery_store = SqliteMessageDeliveryStore(db_path)
     messenger = _FakeMessenger(
         [
             {"update_id": 1, "message": {"text": "hello"}},
@@ -110,7 +179,7 @@ def test_feedback_poller_ignores_non_feedback_callbacks(tmp_path: Path) -> None:
         messenger=messenger,
         state_store=state_store,
         feedback_store=feedback_store,
-        sent_message_store=sent_store,
+        sent_message_store=delivery_store,
     )
     assert result.persisted_votes == 0
     assert result.ignored_updates >= 1
@@ -119,25 +188,11 @@ def test_feedback_poller_ignores_non_feedback_callbacks(tmp_path: Path) -> None:
 
 def test_feedback_poller_daily_downvote_sends_one_alternative(tmp_path: Path) -> None:
     db_path = tmp_path / "berlin_insider.db"
-    sent_store = SqliteSentMessageStore(db_path)
-    sent_store.upsert(
-        SentMessageRecord(
-            message_key="daily-2026-02-23-abc",
-            digest_kind=DigestKind.DAILY,
-            local_date="2026-02-23",
-            sent_at="2026-02-23T08:00:00+00:00",
-            telegram_message_id="42",
-            selected_urls=["https://example.com/primary", "https://example.com/alt"],
-            alternative_item=AlternativeDigestItem(
-                item_url="https://example.com/alt",
-                title="Alternative",
-                summary="Compact alternative summary.",
-                location="Pankow",
-                category=ParsedCategory.EVENT,
-                event_start_at=None,
-                event_end_at=None,
-            ),
-        )
+    delivery_store = _insert_delivery(
+        db_path,
+        message_key="daily-2026-02-23-abc",
+        primary_url="https://example.com/primary",
+        alternative_url="https://example.com/alt",
     )
     messenger = _FakeMessenger(
         [
@@ -159,7 +214,7 @@ def test_feedback_poller_daily_downvote_sends_one_alternative(tmp_path: Path) ->
         messenger=messenger,
         state_store=state_store,
         feedback_store=feedback_store,
-        sent_message_store=sent_store,
+        sent_message_store=delivery_store,
     )
 
     assert result.persisted_votes == 1
@@ -167,4 +222,4 @@ def test_feedback_poller_daily_downvote_sends_one_alternative(tmp_path: Path) ->
     sent_text = messenger.sent_messages[0]["text"]
     assert isinstance(sent_text, str)
     assert "Berlin Insider \\| Tip of the Day" in sent_text
-    assert sent_store.get("daily-2026-02-23-abc-alt1") is not None
+    assert delivery_store.get("daily-2026-02-23-abc-alt1") is not None

@@ -114,7 +114,7 @@ def test_worker_overlap_skips_cycle(tmp_path: Path) -> None:
         messenger=_FakeMessenger(),  # type: ignore[arg-type]
     )
     state_store = worker_module.SqliteSchedulerStateStore(tmp_path / "berlin_insider.db")
-    sent_store = worker_module.SqliteSentMessageStore(tmp_path / "berlin_insider.db")
+    sent_store = worker_module.SqliteMessageDeliveryStore(tmp_path / "berlin_insider.db")
 
     acquired = worker._run_lock.acquire(blocking=False)
     assert acquired is True
@@ -153,7 +153,7 @@ def test_build_scheduler_creates_daily_and_weekend_jobs(tmp_path: Path) -> None:
     scheduler = worker_module._build_scheduler(
         worker=worker,
         state_store=worker_module.SqliteSchedulerStateStore(tmp_path / "berlin_insider.db"),
-        sent_message_store=worker_module.SqliteSentMessageStore(tmp_path / "berlin_insider.db"),
+        sent_message_store=worker_module.SqliteMessageDeliveryStore(tmp_path / "berlin_insider.db"),
     )
     jobs = scheduler.get_jobs()
 

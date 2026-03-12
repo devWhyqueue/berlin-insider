@@ -10,7 +10,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 from fastapi import FastAPI
 
-from berlin_insider.feedback.store import SqliteFeedbackStore, SqliteSentMessageStore
+from berlin_insider.feedback.store import SqliteFeedbackStore, SqliteMessageDeliveryStore
 from berlin_insider.feedback.webhook import WebhookDependencies, create_webhook_app
 from berlin_insider.messenger.telegram import TelegramMessenger
 from berlin_insider.scheduler.models import ScheduleConfig
@@ -36,7 +36,7 @@ class WorkerConfig:
 @dataclass(slots=True)
 class _RuntimeState:
     state_store: SqliteSchedulerStateStore
-    sent_message_store: SqliteSentMessageStore
+    sent_message_store: SqliteMessageDeliveryStore
     app: FastAPI
     scheduler: BackgroundScheduler
 
@@ -70,7 +70,7 @@ class Worker:
 
     def _prepare_runtime_state(self) -> _RuntimeState:
         state_store = SqliteSchedulerStateStore(self._config.db_path)
-        sent_message_store = SqliteSentMessageStore(self._config.db_path)
+        sent_message_store = SqliteMessageDeliveryStore(self._config.db_path)
         feedback_store = SqliteFeedbackStore(self._config.db_path)
         self._register_webhook()
         app = create_webhook_app(
@@ -105,14 +105,16 @@ class Worker:
         if cert_path is None:
             logger.info("Registered Telegram webhook: %s", webhook_url)
             return
-        logger.info("Registered Telegram webhook with certificate: %s (cert=%s)", webhook_url, cert_path)
+        logger.info(
+            "Registered Telegram webhook with certificate: %s (cert=%s)", webhook_url, cert_path
+        )
 
     def _try_run_cycle(
         self,
         *,
         reason: str,
         state_store: SqliteSchedulerStateStore,
-        sent_message_store: SqliteSentMessageStore,
+        sent_message_store: SqliteMessageDeliveryStore,
     ) -> None:
         if not self._run_lock.acquire(blocking=False):
             logger.info("Worker skipped cycle (%s): another run is in progress", reason)
@@ -144,7 +146,7 @@ def _build_scheduler(
     *,
     worker: Worker,
     state_store: SqliteSchedulerStateStore,
-    sent_message_store: SqliteSentMessageStore,
+    sent_message_store: SqliteMessageDeliveryStore,
 ) -> BackgroundScheduler:
     cfg = worker._config.schedule
     scheduler = BackgroundScheduler(timezone=cfg.timezone, job_defaults={"coalesce": True})
@@ -215,7 +217,9 @@ def _resolve_webhook_cert_path(configured_path: Path | None) -> Path | None:
     if configured_path is not None:
         if configured_path.exists():
             return configured_path
-        logger.warning("Webhook cert path does not exist, skipping custom cert: %s", configured_path)
+        logger.warning(
+            "Webhook cert path does not exist, skipping custom cert: %s", configured_path
+        )
         return None
     default_path = Path("/etc/nginx/ssl/berlin-insider.crt")
     if default_path.exists():
