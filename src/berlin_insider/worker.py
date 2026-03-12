@@ -79,7 +79,8 @@ class Worker:
                 feedback_store=feedback_store,
                 sent_message_store=sent_message_store,
                 secret=self._config.telegram_webhook_secret,
-            )
+            ),
+            public_db_path=self._config.db_path,
         )
         scheduler = _build_scheduler(
             worker=self, state_store=state_store, sent_message_store=sent_message_store

@@ -30,8 +30,18 @@ uv run berlin-insider worker --run-once --db-path .data/berlin_insider.db
 
 `worker` is the primary runtime and stays alive as a background service.
 It runs cron-style digest jobs in-process and receives Telegram feedback through webhook callbacks.
+It also serves a public read-only website from `/ui/` on the same FastAPI app.
 By default it runs daily tips on every day except Friday at 08:00 and weekend digests on Friday 08:00
 in `Europe/Berlin`, persisting state in `.data/berlin_insider.db`.
+
+Public routes exposed by the worker:
+
+- `GET /ui/`
+- `GET /ui/api/overview`
+- `GET /ui/api/items`
+- `GET /ui/api/deliveries`
+- `GET /ui/api/feedback`
+- `GET /ui/api/ops`
 
 Required environment variables:
 
@@ -102,12 +112,12 @@ uv run playwright install --with-deps chromium
 
 - Use a public DNS name (for example `bot.example.com`) that points to the VM.
 - Open inbound TCP `80` and `443` in cloud/network firewall.
-- Ensure a reverse proxy serves `https://<your-domain>` on `443` and forwards to `http://127.0.0.1:8080`.
-- If another service already owns `80/443` (for example Pi-hole), move that service to different web ports first.
+- Ensure the shared reverse proxy serves `https://<your-domain>` on `443` and only forwards the Berlin Insider paths to `http://127.0.0.1:8080`.
+- Keep any Pi-hole-managed root paths on the vhost untouched. Do not proxy `/` wholesale.
 - Set `WEBHOOK_PUBLIC_BASE_URL=https://<your-domain>` in `.env`.
 - If you use a self-signed certificate, set `TELEGRAM_WEBHOOK_CERT_PATH` to that cert file (default: `/etc/nginx/ssl/berlin-insider.crt`).
 
-Minimal nginx site example (HTTP redirect + HTTPS reverse proxy):
+Shared nginx vhost example for `https://berlin-insider.crabdance.com/ui/`:
 
 ```nginx
 server {
@@ -121,7 +131,34 @@ server {
     server_name <your-domain>;
     ssl_certificate /etc/nginx/ssl/berlin-insider.crt;
     ssl_certificate_key /etc/nginx/ssl/berlin-insider.key;
+
+    # Leave Pi-hole or any existing root handlers alone.
     location / {
+        # existing root config lives here
+    }
+
+    location /ui/ {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location /ui/api/ {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location /telegram/webhook/ {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location = /healthz {
         proxy_pass http://127.0.0.1:8080;
         proxy_set_header Host $host;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -168,6 +205,12 @@ cd ~/berlin-insider
 TOKEN=$(grep '^TELEGRAM_BOT_TOKEN=' .env | cut -d= -f2- | tr -d '\r')
 curl -s "https://api.telegram.org/bot${TOKEN}/getWebhookInfo"
 ```
+
+Public site acceptance checks:
+
+- Open `https://berlin-insider.crabdance.com/ui/`
+- Confirm `/` still serves Pi-hole or the existing root app unchanged
+- Confirm Telegram webhook callbacks still reach `POST /telegram/webhook/<secret>`
 
 ## Troubleshooting
 
