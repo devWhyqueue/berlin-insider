@@ -89,7 +89,7 @@ def _touch_cache(item: FetchedItem, *, cache: SqliteDetailCacheStore) -> str | N
 
 def _structured_detail_metadata(metadata: dict[str, object]) -> dict[str, object]:
     structured: dict[str, object] = {}
-    for key in ("start_date", "end_date"):
+    for key in ("start_date", "end_date", "page_date", "location"):
         value = metadata.get(key)
         if isinstance(value, str) and value.strip():
             structured[key] = value.strip()

@@ -151,3 +151,60 @@ def test_message_delivery_store_round_trips_alternative_item(tmp_path: Path) -> 
     assert reloaded is not None
     assert reloaded.alternative_item is not None
     assert reloaded.alternative_item.canonical_url == "https://example.com/b"
+
+
+def test_ensure_schema_upgrades_known_placeholder_sources(tmp_path: Path) -> None:
+    db_path = tmp_path / "berlin_insider.db"
+    ensure_schema(db_path)
+    with sqlite_connection(db_path) as conn:
+        conn.execute(
+            """
+            INSERT INTO sources (source_id, source_url, adapter_kind, updated_at)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(source_id) DO UPDATE SET
+                source_url = excluded.source_url,
+                adapter_kind = excluded.adapter_kind,
+                updated_at = excluded.updated_at
+            """,
+            (
+                "visit_berlin_blog",
+                "https://visit_berlin_blog",
+                "derived",
+                "2026-03-12T08:00:00+00:00",
+            ),
+        )
+        conn.commit()
+
+    ensure_schema(db_path)
+
+    with sqlite_connection(db_path) as conn:
+        row = conn.execute(
+            "SELECT source_url, adapter_kind FROM sources WHERE source_id = ?",
+            ("visit_berlin_blog",),
+        ).fetchone()
+    assert row is not None
+    assert row[0] == "https://www.visitberlin.de/de/blog"
+    assert row[1] == "RssAdapter"
+
+
+def test_ensure_schema_removes_unused_placeholder_sources(tmp_path: Path) -> None:
+    db_path = tmp_path / "berlin_insider.db"
+    ensure_schema(db_path)
+    with sqlite_connection(db_path) as conn:
+        conn.execute(
+            """
+            INSERT INTO sources (source_id, source_url, adapter_kind, updated_at)
+            VALUES (?, ?, ?, ?)
+            """,
+            ("legacy_unknown", "https://legacy_unknown", "derived", "2026-03-12T08:00:00+00:00"),
+        )
+        conn.commit()
+
+    ensure_schema(db_path)
+
+    with sqlite_connection(db_path) as conn:
+        row = conn.execute(
+            "SELECT source_id FROM sources WHERE source_id = ?",
+            ("legacy_unknown",),
+        ).fetchone()
+    assert row is None

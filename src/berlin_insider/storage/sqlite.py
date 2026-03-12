@@ -4,6 +4,7 @@ import sqlite3
 from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import UTC, datetime
+from importlib import import_module
 from pathlib import Path
 
 SCHEMA = """
@@ -110,6 +111,7 @@ def ensure_schema(path: Path) -> None:
             column_name="detail_metadata_json",
             definition="TEXT NOT NULL DEFAULT '{}'",
         )
+        _cleanup_placeholder_sources(conn)
         conn.commit()
 
 
@@ -121,6 +123,48 @@ def _ensure_detail_cache_column(
     if column_name in existing_names:
         return
     conn.execute(f"ALTER TABLE detail_cache ADD COLUMN {column_name} {definition}")
+
+
+def _cleanup_placeholder_sources(conn: sqlite3.Connection) -> None:
+    sources_module = import_module("berlin_insider.fetcher.sources")
+    known_sources = {
+        source_id.value: (adapter.definition.source_url, adapter.__class__.__name__)
+        for source_id, adapter in sources_module.SOURCES.items()
+    }
+    rows = conn.execute(
+        """
+        SELECT source_id, source_url, adapter_kind
+        FROM sources
+        WHERE adapter_kind = 'derived' AND source_url = ('https://' || source_id)
+        """
+    ).fetchall()
+    for source_id, source_url, adapter_kind in rows:
+        source_key = str(source_id)
+        known = known_sources.get(source_key)
+        if known is not None:
+            conn.execute(
+                """
+                UPDATE sources
+                SET source_url = ?, adapter_kind = ?, updated_at = ?
+                WHERE source_id = ?
+                """,
+                (known[0], known[1], now_utc_iso(), source_key),
+            )
+            continue
+        if _source_has_items(conn, source_key):
+            continue
+        conn.execute(
+            "DELETE FROM sources WHERE source_id = ? AND source_url = ? AND adapter_kind = ?",
+            (source_key, str(source_url), str(adapter_kind)),
+        )
+
+
+def _source_has_items(conn: sqlite3.Connection, source_id: str) -> bool:
+    row = conn.execute(
+        "SELECT 1 FROM items WHERE source_id = ? LIMIT 1",
+        (source_id,),
+    ).fetchone()
+    return row is not None
 
 
 @contextmanager

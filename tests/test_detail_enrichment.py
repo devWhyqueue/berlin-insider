@@ -77,6 +77,49 @@ def test_extract_detail_payload_captures_jsonld_event_dates() -> None:
     assert detail_metadata == {"start_date": "2026-03-14", "end_date": "2026-03-15"}
 
 
+def test_extract_detail_payload_captures_visible_page_date_and_location() -> None:
+    html = """
+    <html>
+      <body>
+        <article>
+          <div class="content-node__date"><time datetime="2026-03-10T08:00:00Z">10.03.2026</time></div>
+          <p>Intro text long enough to stay in the extracted article content for parser enrichment.</p>
+          <p>Wo: Marheinekeplatz, Kreuzberg</p>
+        </article>
+      </body>
+    </html>
+    """
+    detail_text, detail_metadata = extract_detail_payload(html)
+    assert detail_text is not None
+    assert "Intro text" in detail_text
+    assert detail_metadata == {
+        "page_date": "2026-03-10T08:00:00Z",
+        "location": "Marheinekeplatz, Kreuzberg",
+    }
+
+
+def test_extract_detail_payload_captures_jsonld_page_date_without_event() -> None:
+    html = """
+    <html>
+      <body>
+        <article>
+          This article body is long enough to be selected as detail content and should keep
+          the page-level date metadata when no event JSON-LD is available anywhere on the page.
+        </article>
+        <script type="application/ld+json">
+          {
+            "@context": "https://schema.org",
+            "@type": "WebPage",
+            "dateModified": "2026-03-10T13:35:52+01:00"
+          }
+        </script>
+      </body>
+    </html>
+    """
+    _, detail_metadata = extract_detail_payload(html)
+    assert detail_metadata == {"page_date": "2026-03-10T13:35:52+01:00"}
+
+
 def test_extract_detail_payload_falls_back_to_article_and_main() -> None:
     article_html = "<html><body><article>Detailed article copy with enough words to be useful for parsing and classification.</article></body></html>"
     main_html = "<html><body><main>Detailed main copy with enough words to be useful for parsing and classification.</main></body></html>"
@@ -225,6 +268,31 @@ def test_enrich_items_with_detail_cache_miss_writes_cache(tmp_path: Path, monkey
     cached = SqliteDetailCacheStore(db_path).get("https://example.com/new")
     assert cached is not None
     assert cached.detail_hash == detail_hash
+
+
+def test_enrich_items_with_detail_cache_stores_page_date_and_location(tmp_path: Path, monkeypatch) -> None:
+    db_path = tmp_path / "cache.db"
+
+    def _detail_get(url: str, **kwargs):  # noqa: ANN003, ARG001
+        return """
+        <html><body><article>
+          <time datetime="2026-03-10T08:00:00Z">10.03.2026</time>
+          Text with enough content to be extracted and cached for future parsing decisions.
+          Wo: Maybachufer, Neukölln
+        </article></body></html>
+        """
+
+    monkeypatch.setattr("berlin_insider.fetcher.utils.get_text_with_retries", _detail_get)
+    context = _context()
+    context.detail_cache_db_path = db_path
+    enriched_items, warnings = enrich_items_with_detail([_item("https://example.com/new")], context=context)
+    assert warnings == []
+    cached = SqliteDetailCacheStore(db_path).get("https://example.com/new")
+    assert cached is not None
+    assert cached.detail_metadata == {
+        "page_date": "2026-03-10T08:00:00Z",
+        "location": "Maybachufer, Neukölln",
+    }
 
 
 def test_enrich_items_with_detail_refresh_bypasses_cache(tmp_path: Path, monkeypatch) -> None:

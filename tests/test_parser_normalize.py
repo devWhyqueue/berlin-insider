@@ -127,3 +127,28 @@ def test_normalize_falls_back_to_snippet_when_detail_missing() -> None:
     )
     assert parsed.detail_text is None
     assert parsed.description == "Listing-only summary"
+
+
+def test_normalize_prefers_page_date_metadata_over_published_at() -> None:
+    item = _item(
+        source_id=SourceId.VISIT_BERLIN_BLOG,
+        published_at=datetime(2017, 2, 28, 6, 26, 24, tzinfo=UTC),
+    )
+    item.metadata = {"page_date": "2026-03-10T08:00:00Z"}
+    parsed = normalize_fetched_item(
+        item,
+        reference_now=datetime(2026, 3, 12, 10, 0, tzinfo=UTC),
+    )
+    assert parsed.event_start_at is not None
+    assert parsed.event_start_at.date().isoformat() == "2026-03-10"
+
+
+def test_normalize_uses_detail_location_when_listing_missing() -> None:
+    item = _item(published_at=datetime(2026, 2, 28, 10, 0, tzinfo=UTC))
+    item.location_hint = None
+    item.metadata = {"location": "Maybachufer, Neukölln"}
+    parsed = normalize_fetched_item(
+        item,
+        reference_now=datetime(2026, 2, 27, 10, 0, tzinfo=UTC),
+    )
+    assert parsed.location == "Maybachufer, Neukölln"

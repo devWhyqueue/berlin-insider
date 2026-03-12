@@ -22,7 +22,10 @@ def normalize_fetched_item(item: FetchedItem, *, reference_now: datetime) -> Par
     title = _normalize_text(item.title)
     detail_text = _normalize_detail_text(item.detail_text)
     description = _normalize_description(detail_text or item.snippet)
-    location = _normalize_text(item.location_hint)
+    metadata = item.metadata if isinstance(item.metadata, dict) else {}
+    location = _normalize_text(item.location_hint) or _normalize_text(
+        _as_optional_str(metadata.get("location"))
+    )
     event_start_at = derive_event_start(item, reference_now=reference_now, notes=notes)
     category = infer_category(item, title=title, description=description, location=location)
     weekend = infer_weekend_relevance(event_start_at, reference_now=reference_now)

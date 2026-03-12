@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
+from berlin_insider.fetcher.models import SourceId
 from berlin_insider.fetcher.sources import SOURCES
 from berlin_insider.parser.models import ParsedCategory, ParsedItem, ParseRunResult
 from berlin_insider.storage.sqlite import ensure_schema, now_utc_iso, sqlite_connection
@@ -164,6 +165,25 @@ def _upsert_item(conn, *, item: ParsedItem, now: str) -> None:  # noqa: ANN001
 
 
 def _ensure_source_exists(conn, *, source_id: str, now: str) -> None:  # noqa: ANN001
+    configured = _configured_source(source_id)
+    if configured is not None:
+        conn.execute(
+            """
+            INSERT INTO sources (source_id, source_url, adapter_kind, updated_at)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(source_id) DO UPDATE SET
+                source_url = excluded.source_url,
+                adapter_kind = excluded.adapter_kind,
+                updated_at = excluded.updated_at
+            """,
+            (
+                source_id,
+                configured.definition.source_url,
+                configured.__class__.__name__,
+                now,
+            ),
+        )
+        return
     conn.execute(
         """
         INSERT OR IGNORE INTO sources (source_id, source_url, adapter_kind, updated_at)
@@ -171,6 +191,14 @@ def _ensure_source_exists(conn, *, source_id: str, now: str) -> None:  # noqa: A
         """,
         (source_id, f"https://{source_id}", "derived", now),
     )
+
+
+def _configured_source(source_id: str):  # noqa: ANN202
+    try:
+        source_key = SourceId(source_id)
+    except ValueError:
+        return None
+    return SOURCES.get(source_key)
 
 
 def _row_to_item_record(row: tuple[object, ...] | None) -> ItemRecord | None:

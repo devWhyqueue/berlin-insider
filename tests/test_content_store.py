@@ -79,3 +79,49 @@ def test_persist_items_upserts_deduplicated_items(tmp_path: Path) -> None:
     assert row[1] == canonicalize_url("https://example.com/item?utm_source=test")
     assert row[2] == "Item"
     assert row[3] == "Summary"
+
+
+def test_persist_items_uses_configured_source_metadata(tmp_path: Path) -> None:
+    db_path = tmp_path / "berlin_insider.db"
+    parse_result = ParseRunResult(
+        started_at=datetime(2026, 2, 28, 8, 0, tzinfo=UTC),
+        finished_at=datetime(2026, 2, 28, 8, 1, tzinfo=UTC),
+        results=[
+            SourceParseResult(
+                source_id=SourceId.VISIT_BERLIN_BLOG,
+                status=ParseStatus.SUCCESS,
+                items=[
+                    ParsedItem(
+                        source_id=SourceId.VISIT_BERLIN_BLOG,
+                        item_url="https://example.com/blog-post",
+                        title="Item",
+                        description="Desc",
+                        summary="Summary",
+                        event_start_at=None,
+                        event_end_at=None,
+                        location=None,
+                        category=ParsedCategory.CULTURE,
+                        category_confidence=0.7,
+                        weekend_relevance=WeekendRelevance.POSSIBLE,
+                        weekend_confidence=0.5,
+                    )
+                ],
+                warnings=[],
+                error_message=None,
+                duration_ms=10,
+            )
+        ],
+        total_items=1,
+        failed_sources=[],
+    )
+
+    persist_items(db_path, parse_result)
+
+    with sqlite_connection(db_path) as conn:
+        row = conn.execute(
+            "SELECT source_url, adapter_kind FROM sources WHERE source_id = ?",
+            (SourceId.VISIT_BERLIN_BLOG.value,),
+        ).fetchone()
+    assert row is not None
+    assert row[0] == SOURCES[SourceId.VISIT_BERLIN_BLOG].definition.source_url
+    assert row[1] == SOURCES[SourceId.VISIT_BERLIN_BLOG].__class__.__name__

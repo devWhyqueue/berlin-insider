@@ -41,6 +41,10 @@ def derive_event_start(
     if from_metadata is not None:
         notes.append("event_start_at from metadata.start_date")
         return from_metadata
+    from_page_date = parse_end_date(metadata.get("page_date"))
+    if from_page_date is not None:
+        notes.append("event_start_at from metadata.page_date")
+        return from_page_date
     from_raw = _parse_datetime_utc(item.raw_date_text)
     if from_raw is not None:
         notes.append("event_start_at from raw_date_text via parse_datetime")
