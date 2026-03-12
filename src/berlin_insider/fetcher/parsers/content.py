@@ -5,7 +5,7 @@ from bs4 import BeautifulSoup
 from berlin_insider.fetcher.base import SourceDefinition
 from berlin_insider.fetcher.models import FetchContext, FetchedItem, FetchMethod
 from berlin_insider.fetcher.parsers.common import absolute_url, aware
-from berlin_insider.fetcher.utils import parse_datetime
+from berlin_insider.fetcher.utils import dedupe_urls, parse_datetime
 
 
 def parse_berlin_food_stories(
@@ -61,28 +61,81 @@ def parse_rausgegangen(
     return items
 
 
+def parse_rausgegangen_daily(
+    html: str, definition: SourceDefinition, context: FetchContext
+) -> list[FetchedItem]:
+    """Parse event cards from the main Rausgegangen Berlin day tips page."""
+    soup = BeautifulSoup(html, "html.parser")
+    items: list[FetchedItem] = []
+    for card in soup.select("a[href^='/events/']"):
+        item = _rausgegangen_item(card, definition, context)
+        if item is None:
+            continue
+        items.append(item)
+        if len(items) >= context.max_items_per_source:
+            break
+    return _dedupe_rausgegangen_items(items)
+
+
 def _rausgegangen_item(
     card, definition: SourceDefinition, context: FetchContext
 ) -> FetchedItem | None:
     href = card.get("href", "").strip()
     if not href:
         return None
-    title = card.select_one("h4")
-    date_hint = card.select_one("span.text-sm")
-    venue_hint = card.select_one("span.text-sm.pr-1.opacity-70")
+    title = card.select_one("h4, [role='heading'], heading, h3")
+    date_hint = _rausgegangen_date_hint(card)
+    venue_hint = _rausgegangen_venue_hint(card, title=title)
     return FetchedItem(
         source_id=definition.source_id,
         source_url=definition.source_url,
         item_url=absolute_url(definition.source_url, href),
         title=title.get_text(" ", strip=True) if title else None,
         published_at=None,
-        raw_date_text=date_hint.get_text(" ", strip=True) if date_hint else None,
+        raw_date_text=date_hint,
         snippet=None,
-        location_hint=venue_hint.get_text(" ", strip=True) if venue_hint else None,
+        location_hint=venue_hint,
         fetch_method=FetchMethod.HTML,
         collected_at=aware(context.collected_at),
         metadata={},
     )
+
+
+def _rausgegangen_date_hint(card) -> str | None:
+    node = card.select_one("span.text-sm, div[class*='date'], p[class*='date']")
+    if node is not None:
+        return node.get_text(" ", strip=True) or None
+    for candidate in card.select("div, span, p"):
+        text = candidate.get_text(" ", strip=True)
+        if "|" in text and "Uhr" in text:
+            return text
+    return None
+
+
+def _rausgegangen_venue_hint(card, *, title) -> str | None:
+    node = card.select_one("span.text-sm.pr-1.opacity-70, [class*='venue'], [class*='location']")
+    if node is not None:
+        return node.get_text(" ", strip=True) or None
+    title_text = title.get_text(" ", strip=True) if title else None
+    date_text = _rausgegangen_date_hint(card)
+    for candidate in card.select("div, span, p"):
+        text = candidate.get_text(" ", strip=True)
+        if not text or text == title_text or text == date_text:
+            continue
+        return text
+    return None
+
+
+def _dedupe_rausgegangen_items(items: list[FetchedItem]) -> list[FetchedItem]:
+    unique_urls = set(dedupe_urls([item.item_url for item in items]))
+    deduped: list[FetchedItem] = []
+    seen: set[str] = set()
+    for item in items:
+        if item.item_url not in unique_urls or item.item_url in seen:
+            continue
+        seen.add(item.item_url)
+        deduped.append(item)
+    return deduped
 
 
 def parse_gratis_in_berlin(

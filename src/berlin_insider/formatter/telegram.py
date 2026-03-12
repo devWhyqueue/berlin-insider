@@ -83,7 +83,7 @@ def render_daily_telegram_digest(
         lines.append(_escape_text("No strong tip found today."))
         lines.append(_escape_text("We will share a fresh pick on the next run."))
         return "\n".join(lines)
-    lines.append(_render_bullet(items[0], cfg=cfg))
+    lines.append(_render_daily_item(items[0], cfg=cfg))
     lines.append("")
     lines.extend(_render_footer(items))
     return "\n".join(lines)
@@ -99,7 +99,7 @@ def render_daily_telegram_alternative(
     lines = [
         _escape_text("Berlin Insider | Tip of the Day"),
         "",
-        _render_persisted_item(item, cfg=cfg),
+        _render_daily_persisted_item(item, cfg=cfg),
         "",
     ]
     return "\n".join(lines)
@@ -158,16 +158,30 @@ def _render_bullet(curated_item: CuratedItem, *, cfg: DigestFormatConfig) -> str
         location=item.location,
         summary=item.summary,
         cfg=cfg,
+        bullet=True,
     )
 
 
-def _render_persisted_item(item: AlternativeDigestItem, *, cfg: DigestFormatConfig) -> str:
+def _render_daily_item(curated_item: CuratedItem, *, cfg: DigestFormatConfig) -> str:
+    item: ParsedItem = curated_item.item
     return _render_item_fields(
         title=item.title,
         item_url=item.item_url,
         location=item.location,
         summary=item.summary,
         cfg=cfg,
+        bullet=False,
+    )
+
+
+def _render_daily_persisted_item(item: AlternativeDigestItem, *, cfg: DigestFormatConfig) -> str:
+    return _render_item_fields(
+        title=item.title,
+        item_url=item.item_url,
+        location=item.location,
+        summary=item.summary,
+        cfg=cfg,
+        bullet=False,
     )
 
 
@@ -178,10 +192,12 @@ def _render_item_fields(
     location: str | None,
     summary: str | None,
     cfg: DigestFormatConfig,
+    bullet: bool,
 ) -> str:
     title = _escape_text(title or "Untitled")
     url = _escape_url(item_url)
-    parts = [f"\\- [{title}]({url})"]
+    lead = "\\- " if bullet else ""
+    parts = [f"{lead}[{title}]({url})"]
     if cfg.show_location_when_present and location:
         parts.append(_escape_text(location))
     base_line = " \\| ".join(parts)

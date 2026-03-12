@@ -3,7 +3,12 @@ from datetime import UTC, datetime
 from berlin_insider.curator.models import CuratedItem, CurateRunResult
 from berlin_insider.digest import DigestKind
 from berlin_insider.fetcher.models import SourceId
-from berlin_insider.formatter import DigestFormatConfig, render_telegram_digest
+from berlin_insider.formatter import (
+    AlternativeDigestItem,
+    DigestFormatConfig,
+    render_daily_telegram_alternative,
+    render_telegram_digest,
+)
 from berlin_insider.parser.models import ParsedCategory, ParsedItem, WeekendRelevance
 
 
@@ -162,6 +167,24 @@ def test_formatter_renders_daily_tip() -> None:
     assert "Tip of the Day \\(" not in text
     assert "Daily Pick" in text
     assert "One\\-sentence daily summary\\." in text
+    assert "\\- [Daily Pick]" not in text
+
+
+def test_formatter_renders_daily_alternative_without_bullet() -> None:
+    text = render_daily_telegram_alternative(
+        AlternativeDigestItem(
+            item_url="https://example.com/alt",
+            title="Alternative Pick",
+            summary="Alternative summary.",
+            location="Berlin",
+            category=ParsedCategory.EVENT,
+            event_start_at=None,
+            event_end_at=None,
+        ),
+        config=DigestFormatConfig(timezone="UTC"),
+    )
+    assert "Alternative Pick" in text
+    assert "\\- [Alternative Pick]" not in text
 
 
 def test_formatter_renders_weekend_summary_line() -> None:
@@ -180,6 +203,7 @@ def test_formatter_renders_weekend_summary_line() -> None:
         reference_now=datetime(2026, 2, 27, 8, 0, tzinfo=UTC),
         config=DigestFormatConfig(timezone="UTC"),
     )
+    assert "\\- [Weekend Pick]" in text
     assert "One\\-sentence weekend summary\\." in text
 
 

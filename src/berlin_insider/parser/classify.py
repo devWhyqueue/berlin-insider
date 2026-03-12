@@ -7,14 +7,19 @@ from berlin_insider.fetcher.models import FetchedItem, SourceId
 from berlin_insider.parser.models import ParsedCategory
 
 _SOURCE_PRIORS: dict[SourceId, ParsedCategory] = {
+    SourceId.BERLIN_DE_TICKETS_HEUTE: ParsedCategory.EVENT,
     SourceId.BERLIN_FOOD_STORIES_EDITORIALS: ParsedCategory.FOOD,
     SourceId.BERLIN_FOOD_STORIES_NEWS: ParsedCategory.FOOD,
     SourceId.TELEGRAM_NIGHTDRIVE: ParsedCategory.NIGHTLIFE,
     SourceId.EVENTBRITE_BERLIN_WEEKEND: ParsedCategory.EVENT,
+    SourceId.RA_BERLIN: ParsedCategory.EVENT,
+    SourceId.RAUSGEGANGEN_DAILY: ParsedCategory.EVENT,
     SourceId.RAUSGEGANGEN_WEEKEND: ParsedCategory.EVENT,
+    SourceId.TIP_BERLIN_DAILY: ParsedCategory.EVENT,
     SourceId.TIP_BERLIN_HOME: ParsedCategory.EVENT,
     SourceId.TIP_BERLIN_WEEKEND: ParsedCategory.EVENT,
     SourceId.GRATIS_IN_BERLIN: ParsedCategory.EVENT,
+    SourceId.VISIT_BERLIN_DAILY: ParsedCategory.EVENT,
 }
 
 _KEYWORDS: dict[ParsedCategory, set[str]] = {

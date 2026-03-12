@@ -5,8 +5,14 @@ from berlin_insider.fetcher.models import FetchContext, SourceId
 from berlin_insider.fetcher.parsers.content import (
     parse_berlin_food_stories,
     parse_gratis_in_berlin,
+    parse_rausgegangen_daily,
     parse_rausgegangen,
     parse_telegram,
+)
+from berlin_insider.fetcher.parsers.daily import (
+    parse_berlin_de_tickets_heute,
+    parse_ra_berlin,
+    parse_visit_berlin_daily,
 )
 from berlin_insider.fetcher.parsers.eventbrite import parse_eventbrite_jsonld
 
@@ -74,6 +80,101 @@ def test_parse_gratis_in_berlin() -> None:
     assert len(items) == 1
     assert items[0].title == "Concert"
     assert items[0].raw_date_text == "Heute"
+
+
+def test_parse_visit_berlin_daily() -> None:
+    html = """
+    <main>
+      <article>
+        <a href="/de/category/art">Art</a>
+        <a href="/de/event/characters-languages-urban-space">
+          <div>
+            <p><time>24.10.2025</time> <time>31.05.2026</time></p>
+          </div>
+          <div>
+            <h2>Characters. Languages. Urban space.</h2>
+            <div>Urban space is full of signs.</div>
+          </div>
+        </a>
+      </article>
+    </main>
+    """
+    items = parse_visit_berlin_daily(
+        html,
+        SourceDefinition(
+            SourceId.VISIT_BERLIN_DAILY,
+            "https://www.visitberlin.de/de/tagestipps-veranstaltungen-berlin-karte",
+        ),
+        _context(),
+    )
+    assert len(items) == 1
+    assert items[0].title == "Characters. Languages. Urban space."
+    assert items[0].item_url == "https://www.visitberlin.de/de/event/characters-languages-urban-space"
+    assert items[0].raw_date_text == "24.10.2025 31.05.2026"
+
+
+def test_parse_rausgegangen_daily() -> None:
+    html = """
+    <a href="/events/naked-grapes-w-victordiscos-0/">
+      <div>Heute, 12. Mar | 20:00 Uhr</div>
+      <h4>Naked Grapes w/ VictorDiscos</h4>
+      <div>Orangerie Neukolln</div>
+    </a>
+    """
+    items = parse_rausgegangen_daily(
+        html,
+        SourceDefinition(SourceId.RAUSGEGANGEN_DAILY, "https://rausgegangen.de/berlin/"),
+        _context(),
+    )
+    assert len(items) == 1
+    assert items[0].title == "Naked Grapes w/ VictorDiscos"
+    assert items[0].location_hint == "Orangerie Neukolln"
+    assert items[0].item_url == "https://rausgegangen.de/events/naked-grapes-w-victordiscos-0/"
+
+
+def test_parse_berlin_de_tickets_heute() -> None:
+    html = """
+    <main>
+      <article>
+        <h3><a href="https://www.berlin.de/tickets/show/blinded-by-delight/">Blinded by Delight</a></h3>
+        <p>In der Hauptstadt werden Traume wahr. <a href="https://www.berlin.de/tickets/show/blinded-by-delight/">mehr</a></p>
+      </article>
+    </main>
+    """
+    items = parse_berlin_de_tickets_heute(
+        html,
+        SourceDefinition(SourceId.BERLIN_DE_TICKETS_HEUTE, "https://www.berlin.de/tickets/heute/"),
+        _context(),
+    )
+    assert len(items) == 1
+    assert items[0].title == "Blinded by Delight"
+    assert items[0].snippet == "In der Hauptstadt werden Traume wahr."
+
+
+def test_parse_ra_berlin() -> None:
+    html = """
+    <main>
+      <div>
+        <h3>Do., 12 Mar</h3>
+        <div>
+          <h3><a href="https://de.ra.co/events/2359569">Renate Klubnacht with Dazed State &amp; The Unknown</a></h3>
+          <div>
+            <a href="/clubs/8556">Renate</a>
+          </div>
+        </div>
+      </div>
+    </main>
+    """
+    items = parse_ra_berlin(
+        html,
+        SourceDefinition(SourceId.RA_BERLIN, "https://de.ra.co/events/de/berlin"),
+        _context(),
+    )
+    assert len(items) == 1
+    assert items[0].title == "Renate Klubnacht with Dazed State & The Unknown"
+    assert items[0].location_hint == "Renate"
+    assert items[0].raw_date_text == "Donnerstag"
+    assert items[0].item_url == "https://de.ra.co/events/2359569"
 
 
 def test_parse_telegram() -> None:
