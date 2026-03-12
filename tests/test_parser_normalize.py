@@ -85,6 +85,23 @@ def test_normalize_unknown_date_marks_unknown_weekend() -> None:
     assert parsed.weekend_relevance == WeekendRelevance.UNKNOWN
 
 
+def test_normalize_prefers_metadata_start_date_over_published_at() -> None:
+    item = _item(
+        source_id=SourceId.BERLIN_DE_WOCHENEND_TIPPS,
+        published_at=datetime(2026, 2, 27, 10, 29, 38, tzinfo=UTC),
+    )
+    item.metadata = {"start_date": "2026-03-14", "end_date": "2026-03-15"}
+    parsed = normalize_fetched_item(
+        item,
+        reference_now=datetime(2026, 3, 12, 10, 0, tzinfo=UTC),
+    )
+    assert parsed.event_start_at is not None
+    assert parsed.event_start_at.date().isoformat() == "2026-03-14"
+    assert parsed.event_end_at is not None
+    assert parsed.event_end_at.date().isoformat() == "2026-03-15"
+    assert parsed.weekend_relevance == WeekendRelevance.LIKELY_THIS_WEEKEND
+
+
 def test_normalize_prefers_detail_text_over_snippet() -> None:
     parsed = normalize_fetched_item(
         _item(

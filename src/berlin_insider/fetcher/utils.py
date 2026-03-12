@@ -1,35 +1,17 @@
 from __future__ import annotations
 
-import json
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import replace
 from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
-from typing import Any
-
-from bs4 import BeautifulSoup
 
 from berlin_insider.fetcher.http import get_text_with_playwright, get_text_with_retries
 from berlin_insider.fetcher.models import FetchContext, FetchedItem
+from berlin_insider.fetcher.parsers.detail_extract import extract_detail_payload
 from berlin_insider.storage.detail_cache_enrichment import enrich_one_with_cache
 
 MAX_DETAIL_WORKERS = 4
-MIN_DETAIL_LENGTH = 60
-JSONLD_BODY_KEYS = ("articleBody", "text", "description")
-BOILERPLATE_SELECTORS = (
-    "script",
-    "style",
-    "noscript",
-    "nav",
-    "footer",
-    "header",
-    "aside",
-    "form",
-    "svg",
-    "iframe",
-    "button",
-)
 
 
 def parse_datetime(value: str | None) -> datetime | None:
@@ -65,21 +47,6 @@ def enrich_items_with_detail(
         return items, []
     worker = _enrich_one if context.detail_cache_db_path is None else _enrich_one_cached_wrapper
     return _enrich_items_parallel(items, context=context, worker=worker)
-
-
-def extract_detail_text(html: str) -> str | None:
-    """Extract best-effort readable text from a detail page."""
-    soup = BeautifulSoup(html, "html.parser")
-    jsonld_text = _extract_jsonld_text(soup)
-    if _is_meaningful(jsonld_text):
-        return jsonld_text
-    _strip_boilerplate(soup)
-    for selector in ("article", "main", "body"):
-        node = soup.select_one(selector)
-        candidate = _normalize_text(node.get_text(" ", strip=True)) if node else None
-        if _is_meaningful(candidate):
-            return candidate
-    return None
 
 
 def _enrich_items_parallel(
@@ -119,18 +86,30 @@ def _enrich_one(item: FetchedItem, *, context: FetchContext) -> tuple[FetchedIte
         user_agent=context.user_agent,
         timeout_seconds=context.timeout_seconds,
     )
-    detail_text = extract_detail_text(html)
+    detail_text, detail_metadata = extract_detail_payload(html)
     if detail_text is None and _needs_playwright_retry(item.item_url, html):
         html = get_text_with_playwright(item.item_url, timeout_seconds=context.timeout_seconds)
-        detail_text = extract_detail_text(html)
+        detail_text, detail_metadata = extract_detail_payload(html)
+    enriched_metadata = dict(item.metadata)
+    enriched_metadata.update(detail_metadata)
     if detail_text is None:
         fallback = _fallback_detail_text(item)
         if fallback is None:
             warning = f"Detail content empty for {item.item_url}"
-            return replace(item, detail_status="extract_empty"), warning
+            return replace(item, detail_status="extract_empty", metadata=enriched_metadata), warning
         warning = f"Detail content empty for {item.item_url}; used listing fallback"
-        return replace(item, detail_text=fallback, detail_status="fallback_listing"), warning
-    return replace(item, detail_text=detail_text, detail_status="ok"), None
+        return (
+            replace(
+                item,
+                detail_text=fallback,
+                detail_status="fallback_listing",
+                metadata=enriched_metadata,
+            ),
+            warning,
+        )
+    return replace(
+        item, detail_text=detail_text, detail_status="ok", metadata=enriched_metadata
+    ), None
 
 
 def _enrich_one_cached_wrapper(
@@ -153,62 +132,6 @@ def _parse_datetime_flexible(value: str) -> datetime | None:
     return None
 
 
-def _extract_jsonld_text(soup: BeautifulSoup) -> str | None:
-    for script in soup.select("script[type='application/ld+json']"):
-        content = script.string or script.get_text()
-        if not content:
-            continue
-        for payload in _json_documents(content):
-            candidate = _extract_text_from_payload(payload)
-            if _is_meaningful(candidate):
-                return candidate
-    return None
-
-
-def _json_documents(content: str) -> list[Any]:
-    cleaned = content.strip()
-    if not cleaned:
-        return []
-    try:
-        payload = json.loads(cleaned)
-    except json.JSONDecodeError:
-        return []
-    return payload if isinstance(payload, list) else [payload]
-
-
-def _extract_text_from_payload(payload: Any) -> str | None:
-    if isinstance(payload, dict):
-        for key in JSONLD_BODY_KEYS:
-            candidate = _normalize_text(_coerce_string(payload.get(key)))
-            if _is_meaningful(candidate):
-                return candidate
-        graph = payload.get("@graph")
-        if isinstance(graph, list):
-            for node in graph:
-                candidate = _extract_text_from_payload(node)
-                if _is_meaningful(candidate):
-                    return candidate
-    if isinstance(payload, list):
-        for node in payload:
-            candidate = _extract_text_from_payload(node)
-            if _is_meaningful(candidate):
-                return candidate
-    return None
-
-
-def _strip_boilerplate(soup: BeautifulSoup) -> None:
-    for selector in BOILERPLATE_SELECTORS:
-        for node in soup.select(selector):
-            node.decompose()
-
-
-def _coerce_string(value: object) -> str | None:
-    if value is None:
-        return None
-    text = str(value).strip()
-    return text if text else None
-
-
 def _normalize_text(value: str | None) -> str | None:
     if value is None:
         return None
@@ -218,10 +141,6 @@ def _normalize_text(value: str | None) -> str | None:
 
 def _fallback_detail_text(item: FetchedItem) -> str | None:
     return _normalize_text(item.snippet) or _normalize_text(item.title)
-
-
-def _is_meaningful(value: str | None) -> bool:
-    return value is not None and len(value) >= MIN_DETAIL_LENGTH
 
 
 def _needs_playwright_retry(url: str, html: str) -> bool:

@@ -39,6 +39,7 @@ def _cached_hit(
     metadata = dict(item.metadata)
     metadata["detail_cache_hit"] = True
     metadata["detail_hash"] = cached.detail_hash
+    metadata.update(cached.detail_metadata)
     if cached.summary:
         metadata["cached_summary"] = cached.summary
     return (
@@ -65,6 +66,7 @@ def _store_and_attach_hash(
             source_id=item.source_id.value,
             detail_text=enriched.detail_text,
             detail_hash=detail_hash,
+            detail_metadata=_structured_detail_metadata(metadata),
             detail_status="ok",
         )
         cached_after_write = cache.get(item.item_url)
@@ -83,3 +85,12 @@ def _touch_cache(item: FetchedItem, *, cache: SqliteDetailCacheStore) -> str | N
     except Exception as exc:  # noqa: BLE001
         return f"Detail cache touch failed for {item.item_url}: {exc}"
     return None
+
+
+def _structured_detail_metadata(metadata: dict[str, object]) -> dict[str, object]:
+    structured: dict[str, object] = {}
+    for key in ("start_date", "end_date"):
+        value = metadata.get(key)
+        if isinstance(value, str) and value.strip():
+            structured[key] = value.strip()
+    return structured

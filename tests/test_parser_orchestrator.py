@@ -228,6 +228,7 @@ def test_parser_persists_generated_summary_to_detail_cache(tmp_path: Path) -> No
         source_id=SourceId.MITVERGNUEGEN.value,
         detail_text="Detail body",
         detail_hash="hash-target",
+        detail_metadata={},
         detail_status="ok",
     )
     item = _fetched_item(SourceId.MITVERGNUEGEN, "https://example.com/summary-target")

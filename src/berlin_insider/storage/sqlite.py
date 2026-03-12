@@ -101,6 +101,7 @@ CREATE TABLE IF NOT EXISTS detail_cache (
   detail_text TEXT NOT NULL,
   detail_hash TEXT NOT NULL,
   summary TEXT,
+  detail_metadata_json TEXT NOT NULL DEFAULT '{}',
   first_fetched_at TEXT NOT NULL,
   last_fetched_at TEXT NOT NULL,
   last_used_at TEXT NOT NULL,
@@ -123,6 +124,11 @@ def ensure_schema(path: Path) -> None:
         _ensure_parsed_items_column(conn, column_name="detail_text")
         _ensure_parsed_items_column(conn, column_name="summary")
         _ensure_sent_messages_column(conn, column_name="alternative_item_json")
+        _ensure_detail_cache_column(
+            conn,
+            column_name="detail_metadata_json",
+            definition="TEXT NOT NULL DEFAULT '{}'",
+        )
 
 
 def _ensure_parsed_items_column(conn: sqlite3.Connection, *, column_name: str) -> None:
@@ -139,6 +145,16 @@ def _ensure_sent_messages_column(conn: sqlite3.Connection, *, column_name: str) 
     if column_name in existing_names:
         return
     conn.execute(f"ALTER TABLE sent_messages ADD COLUMN {column_name} TEXT")
+
+
+def _ensure_detail_cache_column(
+    conn: sqlite3.Connection, *, column_name: str, definition: str
+) -> None:
+    columns = conn.execute("PRAGMA table_info(detail_cache)").fetchall()
+    existing_names = {str(column[1]) for column in columns}
+    if column_name in existing_names:
+        return
+    conn.execute(f"ALTER TABLE detail_cache ADD COLUMN {column_name} {definition}")
 
 
 @contextmanager

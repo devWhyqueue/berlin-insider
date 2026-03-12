@@ -36,8 +36,11 @@ def derive_event_start(
     item: FetchedItem, *, reference_now: datetime, notes: list[str]
 ) -> datetime | None:
     """Resolve the best event start timestamp from fetched item fields."""
-    if item.published_at is not None:
-        return to_utc(item.published_at)
+    metadata = item.metadata if isinstance(item.metadata, dict) else {}
+    from_metadata = parse_end_date(metadata.get("start_date"))
+    if from_metadata is not None:
+        notes.append("event_start_at from metadata.start_date")
+        return from_metadata
     from_raw = _parse_datetime_utc(item.raw_date_text)
     if from_raw is not None:
         notes.append("event_start_at from raw_date_text via parse_datetime")
@@ -45,7 +48,11 @@ def derive_event_start(
     from_relative = _parse_german_relative_datetime(item.raw_date_text, reference_now)
     if from_relative is not None:
         notes.append("event_start_at from relative German date phrase")
-    return from_relative
+        return from_relative
+    if item.published_at is not None:
+        notes.append("event_start_at from published_at fallback")
+        return to_utc(item.published_at)
+    return None
 
 
 def parse_end_date(value: object) -> datetime | None:

@@ -16,6 +16,7 @@ def test_detail_cache_upsert_and_get_round_trip(tmp_path: Path) -> None:
         source_id="mitvergnuegen",
         detail_text="Detail body",
         detail_hash="abc123",
+        detail_metadata={"start_date": "2026-03-14", "end_date": "2026-03-15"},
         detail_status="ok",
     )
     entry = store.get("https://example.com/event")
@@ -23,6 +24,7 @@ def test_detail_cache_upsert_and_get_round_trip(tmp_path: Path) -> None:
     assert entry.canonical_url == "https://example.com/event"
     assert entry.detail_text == "Detail body"
     assert entry.detail_hash == "abc123"
+    assert entry.detail_metadata == {"start_date": "2026-03-14", "end_date": "2026-03-15"}
     assert entry.summary is None
 
 
@@ -33,6 +35,7 @@ def test_detail_cache_summary_upsert_guarded_by_hash(tmp_path: Path) -> None:
         source_id="mitvergnuegen",
         detail_text="Detail body",
         detail_hash="abc123",
+        detail_metadata={},
         detail_status="ok",
     )
     store.upsert_summary(
@@ -61,6 +64,7 @@ def test_detail_cache_clears_summary_when_hash_changes(tmp_path: Path) -> None:
         source_id="mitvergnuegen",
         detail_text="Detail body",
         detail_hash="abc123",
+        detail_metadata={"start_date": "2026-03-14"},
         detail_status="ok",
     )
     store.upsert_summary(
@@ -73,8 +77,10 @@ def test_detail_cache_clears_summary_when_hash_changes(tmp_path: Path) -> None:
         source_id="mitvergnuegen",
         detail_text="Changed body",
         detail_hash="def456",
+        detail_metadata={"start_date": "2026-03-20"},
         detail_status="ok",
     )
     entry = store.get("https://example.com/event")
     assert entry is not None
     assert entry.summary is None
+    assert entry.detail_metadata == {"start_date": "2026-03-20"}

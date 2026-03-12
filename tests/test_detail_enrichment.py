@@ -3,8 +3,9 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from pathlib import Path
 
-from berlin_insider.fetcher.utils import enrich_items_with_detail, extract_detail_text
 from berlin_insider.fetcher.models import FetchContext, FetchedItem, FetchMethod, SourceId
+from berlin_insider.fetcher.parsers.detail_extract import extract_detail_payload
+from berlin_insider.fetcher.utils import enrich_items_with_detail
 from berlin_insider.storage.detail_cache import SqliteDetailCacheStore
 
 
@@ -33,7 +34,7 @@ def _item(url: str) -> FetchedItem:
     )
 
 
-def test_extract_detail_text_prefers_jsonld() -> None:
+def test_extract_detail_payload_prefers_jsonld_text() -> None:
     html = """
     <html>
       <body>
@@ -44,31 +45,59 @@ def test_extract_detail_text_prefers_jsonld() -> None:
       </body>
     </html>
     """
-    detail = extract_detail_text(html)
+    detail, detail_metadata = extract_detail_payload(html)
     assert detail is not None
     assert detail.startswith("This is a long detailed body text")
+    assert detail_metadata == {}
 
 
-def test_extract_detail_text_falls_back_to_article_and_main() -> None:
+def test_extract_detail_payload_captures_jsonld_event_dates() -> None:
+    html = """
+    <html>
+      <body>
+        <p class="article__meta text--meta article__subtitle">14. und 15. März 2026</p>
+        <article>
+          Das Vierte Welle Filmfestival bietet Filmschaffenden aus aller Welt eine Plattform
+          und dieser Text ist lang genug to be extracted as detail content for parser enrichment.
+        </article>
+        <script type="application/ld+json">
+          {
+            "@context": "https://schema.org",
+            "@type": "ScreeningEvent",
+            "startDate": "2026-03-14",
+            "endDate": "2026-03-15"
+          }
+        </script>
+      </body>
+    </html>
+    """
+    detail_text, detail_metadata = extract_detail_payload(html)
+    assert detail_text is not None
+    assert "Vierte Welle Filmfestival" in detail_text
+    assert detail_metadata == {"start_date": "2026-03-14", "end_date": "2026-03-15"}
+
+
+def test_extract_detail_payload_falls_back_to_article_and_main() -> None:
     article_html = "<html><body><article>Detailed article copy with enough words to be useful for parsing and classification.</article></body></html>"
     main_html = "<html><body><main>Detailed main copy with enough words to be useful for parsing and classification.</main></body></html>"
-    assert extract_detail_text(article_html) is not None
-    assert extract_detail_text(main_html) is not None
+    assert extract_detail_payload(article_html)[0] is not None
+    assert extract_detail_payload(main_html)[0] is not None
 
 
-def test_extract_detail_text_falls_back_to_body_content() -> None:
+def test_extract_detail_payload_falls_back_to_body_content() -> None:
     html = """
     <html><body>
       <nav>Top menu</nav>
       <div>Long body copy that remains after boilerplate removal and is still meaningful for parser enrichment and storage.</div>
     </body></html>
     """
-    detail = extract_detail_text(html)
+    detail, detail_metadata = extract_detail_payload(html)
     assert detail is not None
     assert detail.startswith("Long body copy")
+    assert detail_metadata == {}
 
 
-def test_extract_detail_text_returns_none_for_boilerplate() -> None:
+def test_extract_detail_payload_returns_none_for_boilerplate() -> None:
     html = """
     <html><body>
       <nav>Main menu links</nav>
@@ -76,7 +105,7 @@ def test_extract_detail_text_returns_none_for_boilerplate() -> None:
       <script>console.log("tracking")</script>
     </body></html>
     """
-    assert extract_detail_text(html) is None
+    assert extract_detail_payload(html) == (None, {})
 
 
 def test_enrich_items_with_detail_keeps_item_on_fetch_error(monkeypatch) -> None:
@@ -91,16 +120,17 @@ def test_enrich_items_with_detail_keeps_item_on_fetch_error(monkeypatch) -> None
     assert any("Detail enrich failed" in warning for warning in warnings)
 
 
-def test_extract_detail_text_handles_decomposed_nodes_without_crash() -> None:
+def test_extract_detail_payload_handles_decomposed_nodes_without_crash() -> None:
     html = """
     <html><body>
       <nav class="menu"><span class="menu-item">Link</span></nav>
       <article>Real detail article content long enough to pass the minimum threshold for extraction logic.</article>
     </body></html>
     """
-    detail = extract_detail_text(html)
+    detail, detail_metadata = extract_detail_payload(html)
     assert detail is not None
     assert detail.startswith("Real detail article content")
+    assert detail_metadata == {}
 
 
 def test_enrich_items_with_detail_uses_listing_fallback_when_detail_empty(monkeypatch) -> None:
@@ -152,6 +182,7 @@ def test_enrich_items_with_detail_uses_cache_hit(tmp_path: Path, monkeypatch) ->
         source_id=SourceId.MITVERGNUEGEN.value,
         detail_text="Cached detail text",
         detail_hash="hash-a",
+        detail_metadata={"start_date": "2026-03-14", "end_date": "2026-03-15"},
         detail_status="ok",
     )
     cache.upsert_summary(
@@ -172,6 +203,8 @@ def test_enrich_items_with_detail_uses_cache_hit(tmp_path: Path, monkeypatch) ->
     assert enriched_items[0].detail_text == "Cached detail text"
     assert enriched_items[0].metadata.get("detail_cache_hit") is True
     assert enriched_items[0].metadata.get("cached_summary") == "Cached summary"
+    assert enriched_items[0].metadata.get("start_date") == "2026-03-14"
+    assert enriched_items[0].metadata.get("end_date") == "2026-03-15"
 
 
 def test_enrich_items_with_detail_cache_miss_writes_cache(tmp_path: Path, monkeypatch) -> None:
@@ -188,6 +221,7 @@ def test_enrich_items_with_detail_cache_miss_writes_cache(tmp_path: Path, monkey
     assert enriched_items[0].detail_status == "ok"
     detail_hash = enriched_items[0].metadata.get("detail_hash")
     assert isinstance(detail_hash, str)
+    assert enriched_items[0].metadata == {"detail_hash": detail_hash}
     cached = SqliteDetailCacheStore(db_path).get("https://example.com/new")
     assert cached is not None
     assert cached.detail_hash == detail_hash
@@ -201,6 +235,7 @@ def test_enrich_items_with_detail_refresh_bypasses_cache(tmp_path: Path, monkeyp
         source_id=SourceId.MITVERGNUEGEN.value,
         detail_text="Old detail",
         detail_hash="old-hash",
+        detail_metadata={"start_date": "2026-03-10"},
         detail_status="ok",
     )
     calls = {"count": 0}

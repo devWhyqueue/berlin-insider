@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from berlin_insider.storage.sqlite import ensure_schema, now_utc_iso, sqlite_connection
 from berlin_insider.storage.url_normalize import canonicalize_url
@@ -14,6 +16,7 @@ class DetailCacheEntry:
     detail_text: str
     detail_hash: str
     summary: str | None
+    detail_metadata: dict[str, Any]
     first_fetched_at: str
     detail_status: str
     updated_at: str
@@ -37,16 +40,20 @@ class SqliteDetailCacheStore:
         source_id: str | None,
         detail_text: str,
         detail_hash: str,
+        detail_metadata: dict[str, Any] | None,
         detail_status: str,
     ) -> None:
         """Insert or update detail cache while preserving summary for identical hashes."""
         canonical_url = canonicalize_url(url)
         now = now_utc_iso()
-        summary, first_fetched_at = _existing_summary(
+        summary, first_fetched_at, existing_detail_metadata = _existing_cached_fields(
             self._db_path,
             canonical_url=canonical_url,
             detail_hash=detail_hash,
             fallback_first_fetched_at=now,
+        )
+        resolved_detail_metadata = (
+            detail_metadata if detail_metadata is not None else existing_detail_metadata
         )
         _upsert_detail_row(
             self._db_path,
@@ -55,6 +62,7 @@ class SqliteDetailCacheStore:
             detail_text=detail_text,
             detail_hash=detail_hash,
             summary=summary,
+            detail_metadata=resolved_detail_metadata,
             first_fetched_at=first_fetched_at,
             detail_status=detail_status,
             now=now,
@@ -96,7 +104,7 @@ def _fetch_cache_row(db_path: Path, *, canonical_url: str) -> tuple[object, ...]
         return conn.execute(
             """
             SELECT canonical_url, source_id, detail_text, detail_hash, summary,
-                   first_fetched_at, detail_status, updated_at
+                   detail_metadata_json, first_fetched_at, detail_status, updated_at
             FROM detail_cache
             WHERE canonical_url = ?
             LIMIT 1
@@ -114,23 +122,24 @@ def _to_entry(row: tuple[object, ...] | None) -> DetailCacheEntry | None:
         detail_text=str(row[2]),
         detail_hash=str(row[3]),
         summary=str(row[4]) if row[4] is not None else None,
-        first_fetched_at=str(row[5]),
-        detail_status=str(row[6]),
-        updated_at=str(row[7]),
+        detail_metadata=_detail_metadata_from_json(row[5]),
+        first_fetched_at=str(row[6]),
+        detail_status=str(row[7]),
+        updated_at=str(row[8]),
     )
 
 
-def _existing_summary(
+def _existing_cached_fields(
     db_path: Path,
     *,
     canonical_url: str,
     detail_hash: str,
     fallback_first_fetched_at: str,
-) -> tuple[str | None, str]:
+) -> tuple[str | None, str, dict[str, Any]]:
     with sqlite_connection(db_path) as conn:
         existing = conn.execute(
             """
-            SELECT detail_hash, summary, first_fetched_at
+            SELECT detail_hash, summary, detail_metadata_json, first_fetched_at
             FROM detail_cache
             WHERE canonical_url = ?
             LIMIT 1
@@ -138,13 +147,14 @@ def _existing_summary(
             (canonical_url,),
         ).fetchone()
     if existing is None:
-        return None, fallback_first_fetched_at
+        return None, fallback_first_fetched_at, {}
     existing_hash = str(existing[0])
     existing_summary = str(existing[1]) if existing[1] is not None else None
-    first_fetched_at = str(existing[2])
+    existing_detail_metadata = _detail_metadata_from_json(existing[2])
+    first_fetched_at = str(existing[3])
     if existing_hash != detail_hash:
-        return None, first_fetched_at
-    return existing_summary, first_fetched_at
+        return None, first_fetched_at, {}
+    return existing_summary, first_fetched_at, existing_detail_metadata
 
 
 def _upsert_detail_row(
@@ -155,6 +165,7 @@ def _upsert_detail_row(
     detail_text: str,
     detail_hash: str,
     summary: str | None,
+    detail_metadata: dict[str, Any],
     first_fetched_at: str,
     detail_status: str,
     now: str,
@@ -164,13 +175,15 @@ def _upsert_detail_row(
             """
             INSERT INTO detail_cache (
                 canonical_url, source_id, detail_text, detail_hash, summary,
-                first_fetched_at, last_fetched_at, last_used_at, detail_status, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                detail_metadata_json, first_fetched_at, last_fetched_at, last_used_at,
+                detail_status, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(canonical_url) DO UPDATE SET
                 source_id = excluded.source_id,
                 detail_text = excluded.detail_text,
                 detail_hash = excluded.detail_hash,
                 summary = excluded.summary,
+                detail_metadata_json = excluded.detail_metadata_json,
                 first_fetched_at = excluded.first_fetched_at,
                 last_fetched_at = excluded.last_fetched_at,
                 last_used_at = excluded.last_used_at,
@@ -183,6 +196,7 @@ def _upsert_detail_row(
                 detail_text,
                 detail_hash,
                 summary,
+                json.dumps(detail_metadata, ensure_ascii=False, sort_keys=True),
                 first_fetched_at,
                 now,
                 now,
@@ -191,3 +205,13 @@ def _upsert_detail_row(
             ),
         )
         conn.commit()
+
+
+def _detail_metadata_from_json(value: object) -> dict[str, Any]:
+    if not isinstance(value, str):
+        return {}
+    try:
+        payload = json.loads(value)
+    except json.JSONDecodeError:
+        return {}
+    return payload if isinstance(payload, dict) else {}
