@@ -6,7 +6,7 @@ from datetime import UTC, date, datetime, time, timedelta
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from berlin_insider.fetcher.models import FetchedItem
-from berlin_insider.fetcher.utils import parse_datetime
+from berlin_insider.fetcher.support.utils import parse_datetime
 from berlin_insider.parser.models import WeekendRelevance
 
 try:

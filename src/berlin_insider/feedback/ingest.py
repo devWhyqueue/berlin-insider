@@ -5,11 +5,11 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Protocol
 
-from berlin_insider.digest import DigestKind
+from berlin_insider.feedback.messenger.follow_up import send_alternative_follow_up_if_needed
+from berlin_insider.feedback.messenger.formatter.digest import DigestKind
+from berlin_insider.feedback.messenger.models import DeliveryResult, FeedbackMetadata
 from berlin_insider.feedback.models import FeedbackEvent, FeedbackVote
 from berlin_insider.feedback.store import SqliteFeedbackStore, SqliteMessageDeliveryStore
-from berlin_insider.messenger.follow_up import send_alternative_follow_up_if_needed
-from berlin_insider.messenger.models import DeliveryResult, FeedbackMetadata
 
 logger = logging.getLogger(__name__)
 

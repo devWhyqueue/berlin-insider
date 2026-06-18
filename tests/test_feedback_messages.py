@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from berlin_insider.feedback.messages import render_daily_alternative_message
-from berlin_insider.formatter.models import AlternativeDigestItem
+from berlin_insider.feedback.messenger.formatter.models import AlternativeDigestItem
+from berlin_insider.feedback.messenger.messages import render_daily_alternative_message
 from berlin_insider.parser.models import ParsedCategory
 
 

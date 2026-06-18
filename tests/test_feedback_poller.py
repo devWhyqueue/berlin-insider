@@ -3,7 +3,8 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from pathlib import Path
 
-from berlin_insider.digest import DigestKind
+from berlin_insider.feedback.messenger.formatter.digest import DigestKind
+from berlin_insider.feedback.messenger.models import DeliveryResult
 from berlin_insider.feedback.models import DeliveredItem, MessageDeliveryRecord
 from berlin_insider.feedback.store import (
     SqliteFeedbackStore,
@@ -11,7 +12,6 @@ from berlin_insider.feedback.store import (
     SqliteTelegramUpdatesStateStore,
 )
 from berlin_insider.feedback.telegram_poller import poll_feedback_once
-from berlin_insider.messenger.models import DeliveryResult
 from berlin_insider.parser.models import ParsedCategory
 from berlin_insider.storage.sqlite import ensure_schema, sqlite_connection
 

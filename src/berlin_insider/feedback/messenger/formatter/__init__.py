@@ -1,5 +1,8 @@
-from berlin_insider.formatter.models import AlternativeDigestItem, DigestFormatConfig
-from berlin_insider.formatter.telegram import (
+from berlin_insider.feedback.messenger.formatter.models import (
+    AlternativeDigestItem,
+    DigestFormatConfig,
+)
+from berlin_insider.feedback.messenger.formatter.telegram import (
     render_daily_telegram_alternative,
     render_daily_telegram_digest,
     render_telegram_digest,

@@ -7,22 +7,23 @@ from dataclasses import asdict
 from datetime import UTC, datetime
 from pathlib import Path
 
-from berlin_insider.cli_parser import build_parser
-from berlin_insider.cli_render import (
+from berlin_insider.app.runtime.cli_parser import build_parser
+from berlin_insider.app.runtime.cli_render import (
     render_summary,
     render_summary_with_parse,
     render_summary_with_parse_and_curate,
 )
+from berlin_insider.app.runtime.worker import Worker, WorkerConfig
 from berlin_insider.curator.config import CuratorConfig
 from berlin_insider.curator.models import CurateRunResult
 from berlin_insider.curator.orchestrator import Curator
 from berlin_insider.curator.store import SqliteSentItemStore
-from berlin_insider.digest import DigestKind
+from berlin_insider.feedback.messenger.formatter import render_telegram_digest
+from berlin_insider.feedback.messenger.formatter.digest import DigestKind
+from berlin_insider.feedback.messenger.telegram import TelegramMessenger
 from berlin_insider.feedback.store import SqliteMessageDeliveryStore
 from berlin_insider.fetcher.models import FetchContext, FetchRunResult, SourceId
 from berlin_insider.fetcher.orchestrator import Fetcher
-from berlin_insider.formatter import render_telegram_digest
-from berlin_insider.messenger.telegram import TelegramMessenger
 from berlin_insider.parser.models import ParseRunResult
 from berlin_insider.parser.orchestrator import Parser
 from berlin_insider.scheduler.cli_log import log_schedule_result
@@ -30,7 +31,6 @@ from berlin_insider.scheduler.models import ScheduleConfig
 from berlin_insider.scheduler.orchestrator import Scheduler
 from berlin_insider.scheduler.store import SqliteSchedulerStateStore
 from berlin_insider.storage.item_store import persist_items, upsert_source_websites
-from berlin_insider.worker import Worker, WorkerConfig
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO, format="%(message)s")
@@ -199,7 +199,7 @@ def _log_fetch_with_parse_and_curate(
 
 
 def _load_dotenv_defaults(path: Path | None = None) -> None:
-    """Load KEY=VALUE pairs from .env into process environment without overriding existing values."""
+    """Load KEY=VALUE pairs from .env without overriding existing environment values."""
     env_path = path or Path(".env")
     if not env_path.exists():
         return

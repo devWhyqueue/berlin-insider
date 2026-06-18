@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Literal
 
-from berlin_insider.digest import DigestKind
+from berlin_insider.feedback.messenger.formatter.digest import DigestKind
 from berlin_insider.parser.models import ParsedCategory
 
 FeedbackVote = Literal["up", "down"]

@@ -7,7 +7,11 @@ from pathlib import Path
 
 import httpx
 
-from berlin_insider.messenger.models import DeliveryResult, FeedbackMetadata, MessengerError
+from berlin_insider.feedback.messenger.models import (
+    DeliveryResult,
+    FeedbackMetadata,
+    MessengerError,
+)
 
 _DEFAULT_API_BASE = "https://api.telegram.org"
 

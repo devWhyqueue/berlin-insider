@@ -32,7 +32,7 @@ def test_rss_adapter_enriches_detail_text(monkeypatch) -> None:
         return "<html><body><article>This detail page has enough content to be captured as full detail text for parsing.</article></body></html>"
 
     monkeypatch.setattr("berlin_insider.fetcher.adapters.rss.get_text_with_retries", _feed_get)
-    monkeypatch.setattr("berlin_insider.fetcher.utils.get_text_with_retries", _detail_get)
+    monkeypatch.setattr("berlin_insider.fetcher.support.utils.get_text_with_retries", _detail_get)
     adapter = RssAdapter(
         definition=SourceDefinition(SourceId.MITVERGNUEGEN, "https://example.com/source"),
         feed_url="https://example.com/feed.xml",
@@ -70,7 +70,7 @@ def test_html_adapter_enriches_detail_text(monkeypatch) -> None:
         ]
 
     monkeypatch.setattr("berlin_insider.fetcher.adapters.html.get_text_with_retries", _listing_get)
-    monkeypatch.setattr("berlin_insider.fetcher.utils.get_text_with_retries", _detail_get)
+    monkeypatch.setattr("berlin_insider.fetcher.support.utils.get_text_with_retries", _detail_get)
     adapter = HtmlAdapter(
         definition=SourceDefinition(SourceId.GRATIS_IN_BERLIN, "https://example.com/list"),
         parser=_parser,

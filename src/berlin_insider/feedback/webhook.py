@@ -6,10 +6,10 @@ from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
 
+from berlin_insider.app.web import PublicSiteDependencies, attach_public_site
 from berlin_insider.feedback.ingest import ingest_feedback_update
+from berlin_insider.feedback.messenger.telegram import TelegramMessenger
 from berlin_insider.feedback.store import SqliteFeedbackStore, SqliteMessageDeliveryStore
-from berlin_insider.messenger.telegram import TelegramMessenger
-from berlin_insider.web import PublicSiteDependencies, attach_public_site
 
 logger = logging.getLogger(__name__)
 

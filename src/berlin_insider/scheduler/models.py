@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from enum import StrEnum
 
-from berlin_insider.digest import DigestKind
+from berlin_insider.feedback.messenger.formatter.digest import DigestKind
 
 
 class SchedulerStatus(StrEnum):

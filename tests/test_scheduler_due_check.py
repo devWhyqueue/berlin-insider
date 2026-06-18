@@ -1,6 +1,6 @@
 from datetime import UTC, datetime
 
-from berlin_insider.digest import DigestKind
+from berlin_insider.feedback.messenger.formatter.digest import DigestKind
 from berlin_insider.scheduler.models import ScheduleConfig, SchedulerState
 from berlin_insider.scheduler.orchestrator import is_due
 

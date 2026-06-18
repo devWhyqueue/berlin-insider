@@ -8,10 +8,10 @@ from berlin_insider.curator.config import CuratorConfig
 from berlin_insider.curator.models import CurateRunResult
 from berlin_insider.curator.orchestrator import Curator
 from berlin_insider.curator.store import SqliteSentItemStore
-from berlin_insider.digest import DigestKind
+from berlin_insider.feedback.messenger.formatter import render_telegram_digest
+from berlin_insider.feedback.messenger.formatter.digest import DigestKind
 from berlin_insider.fetcher.models import FetchContext, FetchRunResult, SourceId
 from berlin_insider.fetcher.orchestrator import Fetcher
-from berlin_insider.formatter import render_telegram_digest
 from berlin_insider.parser.models import ParseRunResult
 from berlin_insider.parser.orchestrator import Parser
 from berlin_insider.storage.detail_cache import SqliteDetailCacheStore

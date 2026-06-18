@@ -5,13 +5,13 @@ from datetime import UTC, datetime
 from typing import Protocol
 
 from berlin_insider.feedback.ingest import ingest_feedback_update
+from berlin_insider.feedback.messenger.models import DeliveryResult, FeedbackMetadata
 from berlin_insider.feedback.models import FeedbackPollResult, TelegramUpdatesState
 from berlin_insider.feedback.store import (
     SqliteFeedbackStore,
     SqliteMessageDeliveryStore,
     SqliteTelegramUpdatesStateStore,
 )
-from berlin_insider.messenger.models import DeliveryResult, FeedbackMetadata
 
 
 class FeedbackMessenger(Protocol):

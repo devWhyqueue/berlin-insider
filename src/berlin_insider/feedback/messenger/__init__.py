@@ -1,10 +1,10 @@
-from berlin_insider.messenger.models import (
+from berlin_insider.feedback.messenger.models import (
     DeliveryResult,
     FeedbackMetadata,
     Messenger,
     MessengerError,
 )
-from berlin_insider.messenger.telegram import TelegramMessenger
+from berlin_insider.feedback.messenger.telegram import TelegramMessenger
 
 __all__ = [
     "DeliveryResult",

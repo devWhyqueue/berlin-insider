@@ -4,7 +4,7 @@ import json
 from collections.abc import Sequence
 from typing import Literal
 
-from berlin_insider.web.models import (
+from berlin_insider.app.web.models import (
     DeliveryItem,
     DeliveryRow,
     DetailCacheEntryView,

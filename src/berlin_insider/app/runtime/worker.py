@@ -10,9 +10,9 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 from fastapi import FastAPI
 
+from berlin_insider.feedback.messenger.telegram import TelegramMessenger
 from berlin_insider.feedback.store import SqliteFeedbackStore, SqliteMessageDeliveryStore
 from berlin_insider.feedback.webhook import WebhookDependencies, create_webhook_app
-from berlin_insider.messenger.telegram import TelegramMessenger
 from berlin_insider.scheduler.models import ScheduleConfig
 from berlin_insider.scheduler.orchestrator import Scheduler
 from berlin_insider.scheduler.store import SqliteSchedulerStateStore

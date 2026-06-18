@@ -4,10 +4,10 @@ from dataclasses import dataclass
 from time import perf_counter
 
 from berlin_insider.fetcher.base import SourceAdapter, SourceDefinition
-from berlin_insider.fetcher.http import get_text_with_playwright
 from berlin_insider.fetcher.models import FetchContext, FetchStatus, SourceFetchResult
 from berlin_insider.fetcher.parsers.common import Parser
-from berlin_insider.fetcher.utils import enrich_items_with_detail
+from berlin_insider.fetcher.support.http import get_text_with_playwright
+from berlin_insider.fetcher.support.utils import enrich_items_with_detail
 
 
 @dataclass(slots=True)

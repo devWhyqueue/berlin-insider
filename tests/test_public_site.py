@@ -5,8 +5,13 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
-from berlin_insider.digest import DigestKind
-from berlin_insider.feedback.models import DeliveredItem, MessageDeliveryRecord
+from berlin_insider.feedback.messenger.formatter.digest import DigestKind
+from berlin_insider.feedback.models import (
+    DeliveredItem,
+    FeedbackEvent,
+    FeedbackVote,
+    MessageDeliveryRecord,
+)
 from berlin_insider.feedback.store import SqliteFeedbackStore, SqliteMessageDeliveryStore
 from berlin_insider.feedback.webhook import WebhookDependencies, create_webhook_app
 from berlin_insider.parser.models import ParsedCategory
@@ -305,16 +310,14 @@ def _delivered_item(db_path: Path, canonical_url: str) -> DeliveredItem:
     )
 
 
-def _feedback_event(message_key: str, telegram_user_id: int, vote: str):
+def _feedback_event(
+    message_key: str, telegram_user_id: int, vote: FeedbackVote
+) -> FeedbackEvent:
     now = "2026-03-12T08:05:00+00:00"
-    return type(
-        "_FeedbackEvent",
-        (),
-        {
-            "message_key": message_key,
-            "telegram_user_id": telegram_user_id,
-            "vote": vote,
-            "voted_at": now,
-            "updated_at": now,
-        },
-    )()
+    return FeedbackEvent(
+        message_key=message_key,
+        telegram_user_id=telegram_user_id,
+        vote=vote,
+        voted_at=now,
+        updated_at=now,
+    )

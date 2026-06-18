@@ -1,14 +1,14 @@
 from datetime import UTC, datetime
 
 from berlin_insider.curator.models import CuratedItem, CurateRunResult
-from berlin_insider.digest import DigestKind
-from berlin_insider.fetcher.models import SourceId
-from berlin_insider.formatter import (
+from berlin_insider.feedback.messenger.formatter import (
     AlternativeDigestItem,
     DigestFormatConfig,
     render_daily_telegram_alternative,
     render_telegram_digest,
 )
+from berlin_insider.feedback.messenger.formatter.digest import DigestKind
+from berlin_insider.fetcher.models import SourceId
 from berlin_insider.parser.models import ParsedCategory, ParsedItem, WeekendRelevance
 
 

@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from berlin_insider.digest import DigestKind
+from berlin_insider.feedback.messenger.formatter.digest import DigestKind
 from berlin_insider.feedback.models import DeliveredItem, FeedbackEvent, MessageDeliveryRecord
 from berlin_insider.feedback.store import SqliteFeedbackStore, SqliteMessageDeliveryStore
 from berlin_insider.parser.models import ParsedCategory

@@ -5,10 +5,10 @@ from typing import Any, cast
 
 import pytest
 
-import berlin_insider.cli as cli
-from berlin_insider.digest import DigestKind
+import berlin_insider.app.runtime.cli as cli
+from berlin_insider.app.runtime.cli_parser import build_parser
+from berlin_insider.feedback.messenger.formatter.digest import DigestKind
 from berlin_insider.scheduler.models import SchedulerState, SchedulerStatus, ScheduleRunResult
-from berlin_insider.cli_parser import build_parser
 
 
 def test_cli_worker_runs_with_config(monkeypatch) -> None:

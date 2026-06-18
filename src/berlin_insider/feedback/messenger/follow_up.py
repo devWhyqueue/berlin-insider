@@ -6,12 +6,12 @@ from difflib import SequenceMatcher
 from typing import Protocol
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from berlin_insider.digest import DigestKind
-from berlin_insider.feedback.messages import render_daily_alternative_message
+from berlin_insider.feedback.messenger.formatter.digest import DigestKind
+from berlin_insider.feedback.messenger.formatter.models import AlternativeDigestItem
+from berlin_insider.feedback.messenger.messages import render_daily_alternative_message
+from berlin_insider.feedback.messenger.models import DeliveryResult, FeedbackMetadata
 from berlin_insider.feedback.models import MessageDeliveryRecord
 from berlin_insider.feedback.store import SqliteMessageDeliveryStore
-from berlin_insider.formatter.models import AlternativeDigestItem
-from berlin_insider.messenger.models import DeliveryResult, FeedbackMetadata
 from berlin_insider.parser.models import ParsedCategory
 
 logger = logging.getLogger(__name__)

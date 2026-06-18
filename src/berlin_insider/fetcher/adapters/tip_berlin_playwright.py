@@ -8,7 +8,7 @@ from playwright.sync_api import sync_playwright
 from berlin_insider.fetcher.base import SourceAdapter, SourceDefinition
 from berlin_insider.fetcher.models import FetchContext, FetchStatus, SourceFetchResult
 from berlin_insider.fetcher.parsers.tip_berlin import extract_tip_berlin_items_from_html
-from berlin_insider.fetcher.utils import enrich_items_with_detail
+from berlin_insider.fetcher.support.utils import enrich_items_with_detail
 
 
 @dataclass(slots=True)

@@ -6,7 +6,6 @@ from time import perf_counter
 from xml.etree import ElementTree
 
 from berlin_insider.fetcher.base import SourceAdapter, SourceDefinition
-from berlin_insider.fetcher.http import get_text_with_retries
 from berlin_insider.fetcher.models import (
     FetchContext,
     FetchedItem,
@@ -14,7 +13,8 @@ from berlin_insider.fetcher.models import (
     FetchStatus,
     SourceFetchResult,
 )
-from berlin_insider.fetcher.utils import enrich_items_with_detail, parse_datetime
+from berlin_insider.fetcher.support.http import get_text_with_retries
+from berlin_insider.fetcher.support.utils import enrich_items_with_detail, parse_datetime
 
 
 @dataclass(slots=True)

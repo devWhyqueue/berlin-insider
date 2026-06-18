@@ -128,5 +128,6 @@ def _curated_item_preview(item: CuratedItem) -> str:
     notes_count = len(item.selection_notes)
     return (
         f"{title} | {start} | category={item.item.category.value} | "
-        f"weekend={item.item.weekend_relevance.value} | score={item.score:.2f} | notes={notes_count}"
+        f"weekend={item.item.weekend_relevance.value} | score={item.score:.2f} | "
+        f"notes={notes_count}"
     )

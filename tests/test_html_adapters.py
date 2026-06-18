@@ -5,8 +5,8 @@ from berlin_insider.fetcher.models import FetchContext, SourceId
 from berlin_insider.fetcher.parsers.content import (
     parse_berlin_food_stories,
     parse_gratis_in_berlin,
-    parse_rausgegangen_daily,
     parse_rausgegangen,
+    parse_rausgegangen_daily,
     parse_telegram,
 )
 from berlin_insider.fetcher.parsers.daily import (

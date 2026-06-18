@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import berlin_insider.worker as worker_module
+import berlin_insider.app.runtime.worker as worker_module
 from berlin_insider.scheduler.models import ScheduleConfig, SchedulerState, SchedulerStatus
 
 

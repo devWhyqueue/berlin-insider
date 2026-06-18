@@ -7,7 +7,7 @@ from bs4 import BeautifulSoup
 from berlin_insider.fetcher.base import SourceDefinition
 from berlin_insider.fetcher.models import FetchContext, FetchedItem, FetchMethod
 from berlin_insider.fetcher.parsers.common import aware
-from berlin_insider.fetcher.utils import parse_datetime
+from berlin_insider.fetcher.support.utils import parse_datetime
 
 
 def parse_eventbrite_jsonld(

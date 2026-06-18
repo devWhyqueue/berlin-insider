@@ -1,8 +1,13 @@
 from datetime import UTC, datetime
 from pathlib import Path
 
-import berlin_insider.cli as cli
-from berlin_insider.curator.models import CuratedItem, CurateRunResult, CurateStatus, SourceCurateResult
+import berlin_insider.app.runtime.cli as cli
+from berlin_insider.curator.models import (
+    CuratedItem,
+    CurateRunResult,
+    CurateStatus,
+    SourceCurateResult,
+)
 from berlin_insider.fetcher.models import (
     FetchedItem,
     FetchMethod,

@@ -1,7 +1,7 @@
-from datetime import UTC, datetime
 import json
+from datetime import UTC, datetime
 
-import berlin_insider.cli as cli
+import berlin_insider.app.runtime.cli as cli
 from berlin_insider.curator.models import CurateRunResult
 from berlin_insider.fetcher.models import FetchRunResult
 from berlin_insider.parser.models import ParseRunResult

@@ -3,8 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Literal
 
-from berlin_insider.storage.sqlite import now_utc_iso, sqlite_connection
-from berlin_insider.web.models import (
+from berlin_insider.app.web.models import (
     DeliveriesResponse,
     FeedbackResponse,
     ItemsResponse,
@@ -14,7 +13,7 @@ from berlin_insider.web.models import (
     OverviewWorker,
     TelegramUpdatesStateView,
 )
-from berlin_insider.web.query_helpers import (
+from berlin_insider.app.web.query_helpers import (
     _WORKER_STATE_FIELDS,
     _delivery_from_row,
     _detail_cache_summary,
@@ -27,6 +26,7 @@ from berlin_insider.web.query_helpers import (
     _telegram_update_id,
     _worker_state_view,
 )
+from berlin_insider.storage.sqlite import now_utc_iso, sqlite_connection
 
 _DELIVERIES_SQL = """
 SELECT

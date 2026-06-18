@@ -3,7 +3,8 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from pathlib import Path
 
-import berlin_insider.pipeline as pipeline_module
+import berlin_insider.app.runtime.pipeline as pipeline_module
+from berlin_insider.app.runtime.pipeline import run_fetch_parse_pipeline
 from berlin_insider.fetcher.models import (
     FetchContext,
     FetchedItem,
@@ -12,8 +13,7 @@ from berlin_insider.fetcher.models import (
     SourceFetchResult,
     SourceId,
 )
-from berlin_insider.fetcher.utils import enrich_items_with_detail
-from berlin_insider.pipeline import run_fetch_parse_pipeline
+from berlin_insider.fetcher.support.utils import enrich_items_with_detail
 
 
 class _CountingSummaryGenerator:
@@ -66,7 +66,7 @@ def test_pipeline_reuses_detail_and_summary_cache(monkeypatch, tmp_path: Path) -
         detail_calls["count"] += 1
         return "<html><body><article>Integration detail text with enough content for extraction and cache persistence.</article></body></html>"
 
-    monkeypatch.setattr("berlin_insider.fetcher.utils.get_text_with_retries", _detail_get)
+    monkeypatch.setattr("berlin_insider.fetcher.support.utils.get_text_with_retries", _detail_get)
     monkeypatch.setattr(
         "berlin_insider.parser.orchestrator.OpenAISummaryGenerator.from_env",
         lambda env=None: summary,  # noqa: ARG005

@@ -5,8 +5,11 @@ from collections import defaultdict
 from datetime import datetime
 
 from berlin_insider.curator.models import CuratedItem, CurateRunResult
-from berlin_insider.digest import DigestKind
-from berlin_insider.formatter.models import AlternativeDigestItem, DigestFormatConfig
+from berlin_insider.feedback.messenger.formatter.digest import DigestKind
+from berlin_insider.feedback.messenger.formatter.models import (
+    AlternativeDigestItem,
+    DigestFormatConfig,
+)
 from berlin_insider.parser.models import ParsedCategory, ParsedItem
 
 _CATEGORY_ORDER = [

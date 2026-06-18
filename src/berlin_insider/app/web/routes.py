@@ -8,17 +8,17 @@ from fastapi import APIRouter, FastAPI, Query
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
-from berlin_insider.web.models import (
+from berlin_insider.app.web.models import (
     DeliveriesResponse,
     FeedbackResponse,
     ItemsResponse,
     OpsResponse,
     OverviewResponse,
 )
-from berlin_insider.web.render import BASE_PATH, STATIC_PATH, _render_dashboard_html
-from berlin_insider.web.repository import _PublicSiteRepository
+from berlin_insider.app.web.render import BASE_PATH, STATIC_PATH, _render_dashboard_html
+from berlin_insider.app.web.repository import _PublicSiteRepository
 
-STATIC_DIR = Path(__file__).resolve().parent.parent / "public_static"
+STATIC_DIR = Path(__file__).resolve().parent / "static"
 
 
 @dataclass(slots=True)

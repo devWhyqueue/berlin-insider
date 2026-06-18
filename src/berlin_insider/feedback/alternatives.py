@@ -5,7 +5,7 @@ from difflib import SequenceMatcher
 from pathlib import Path
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from berlin_insider.digest import DigestKind
+from berlin_insider.feedback.messenger.formatter.digest import DigestKind
 from berlin_insider.feedback.models import DeliveredItem
 from berlin_insider.parser.models import ParsedCategory
 from berlin_insider.storage.sqlite import sqlite_connection

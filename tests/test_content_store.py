@@ -6,16 +6,16 @@ from pathlib import Path
 from berlin_insider.fetcher.models import SourceId
 from berlin_insider.fetcher.sources import SOURCES
 from berlin_insider.parser.models import (
-    ParseRunResult,
-    ParseStatus,
     ParsedCategory,
     ParsedItem,
+    ParseRunResult,
+    ParseStatus,
     SourceParseResult,
     WeekendRelevance,
 )
+from berlin_insider.storage.item_store import persist_items, upsert_source_websites
 from berlin_insider.storage.sqlite import sqlite_connection
 from berlin_insider.storage.url_normalize import canonicalize_url
-from berlin_insider.storage.item_store import persist_items, upsert_source_websites
 
 
 def test_upsert_source_websites_inserts_configured_sources(tmp_path: Path) -> None:

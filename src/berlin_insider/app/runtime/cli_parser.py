@@ -3,9 +3,9 @@ from __future__ import annotations
 import argparse
 import os
 
-from berlin_insider.digest import DigestKind
+from berlin_insider.app.runtime.pipeline import DEFAULT_USER_AGENT
+from berlin_insider.feedback.messenger.formatter.digest import DigestKind
 from berlin_insider.fetcher.models import SourceId
-from berlin_insider.pipeline import DEFAULT_USER_AGENT
 
 
 def build_parser() -> argparse.ArgumentParser:

@@ -4,13 +4,13 @@ from berlin_insider.curator.config import CuratorConfig
 from berlin_insider.curator.models import DropReason
 from berlin_insider.curator.orchestrator import Curator
 from berlin_insider.curator.store import NoOpSentItemStore
-from berlin_insider.digest import DigestKind
+from berlin_insider.feedback.messenger.formatter.digest import DigestKind
 from berlin_insider.fetcher.models import SourceId
 from berlin_insider.parser.models import (
-    ParseRunResult,
-    ParseStatus,
     ParsedCategory,
     ParsedItem,
+    ParseRunResult,
+    ParseStatus,
     SourceParseResult,
     WeekendRelevance,
 )

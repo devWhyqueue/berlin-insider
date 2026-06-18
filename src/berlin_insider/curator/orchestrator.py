@@ -24,7 +24,7 @@ from berlin_insider.curator.models import (
 )
 from berlin_insider.curator.scoring import score_item
 from berlin_insider.curator.store import SentItemStore, canonicalize_url
-from berlin_insider.digest import DigestKind
+from berlin_insider.feedback.messenger.formatter.digest import DigestKind
 from berlin_insider.parser.models import ParsedItem, ParseRunResult, WeekendRelevance
 
 

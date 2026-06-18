@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Protocol
 
-from berlin_insider.digest import DigestKind
+from berlin_insider.feedback.messenger.formatter.digest import DigestKind
 from berlin_insider.parser.models import ParsedItem
 from berlin_insider.storage.sqlite import ensure_schema, sqlite_connection
 from berlin_insider.storage.url_normalize import canonicalize_url

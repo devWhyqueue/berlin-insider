@@ -5,7 +5,7 @@ from bs4 import BeautifulSoup
 from berlin_insider.fetcher.base import SourceDefinition
 from berlin_insider.fetcher.models import FetchContext, FetchedItem, FetchMethod
 from berlin_insider.fetcher.parsers.common import absolute_url, aware
-from berlin_insider.fetcher.utils import dedupe_urls
+from berlin_insider.fetcher.support.utils import dedupe_urls
 
 
 def extract_tip_berlin_items_from_html(

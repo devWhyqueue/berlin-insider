@@ -5,10 +5,9 @@ from pathlib import Path
 import httpx
 import pytest
 
-from berlin_insider.digest import DigestKind
-from berlin_insider.messenger.models import FeedbackMetadata
-from berlin_insider.messenger.models import MessengerError
-from berlin_insider.messenger.telegram import TelegramMessenger
+from berlin_insider.feedback.messenger.formatter.digest import DigestKind
+from berlin_insider.feedback.messenger.models import FeedbackMetadata, MessengerError
+from berlin_insider.feedback.messenger.telegram import TelegramMessenger
 
 
 def test_telegram_messenger_send_success(monkeypatch) -> None:
@@ -20,7 +19,7 @@ def test_telegram_messenger_send_success(monkeypatch) -> None:
         captured["timeout"] = timeout
         return httpx.Response(status_code=200, json={"ok": True, "result": {"message_id": 123}})
 
-    monkeypatch.setattr("berlin_insider.messenger.telegram.httpx.post", _fake_post)
+    monkeypatch.setattr("berlin_insider.feedback.messenger.telegram.httpx.post", _fake_post)
     messenger = TelegramMessenger(bot_token="token", chat_id="-10001")
 
     result = messenger.send_digest(text="Berlin Insider")
@@ -39,7 +38,7 @@ def test_telegram_messenger_raises_on_http_error(monkeypatch) -> None:
     def _fake_post(url, *, json, timeout):  # noqa: ANN001, ANN202
         return httpx.Response(status_code=403, text="forbidden")
 
-    monkeypatch.setattr("berlin_insider.messenger.telegram.httpx.post", _fake_post)
+    monkeypatch.setattr("berlin_insider.feedback.messenger.telegram.httpx.post", _fake_post)
     messenger = TelegramMessenger(bot_token="token", chat_id="-10001")
 
     with pytest.raises(MessengerError, match="403"):
@@ -50,7 +49,7 @@ def test_telegram_messenger_raises_on_rejected_payload(monkeypatch) -> None:
     def _fake_post(url, *, json, timeout):  # noqa: ANN001, ANN202
         return httpx.Response(status_code=200, json={"ok": False, "description": "Bad Request"})
 
-    monkeypatch.setattr("berlin_insider.messenger.telegram.httpx.post", _fake_post)
+    monkeypatch.setattr("berlin_insider.feedback.messenger.telegram.httpx.post", _fake_post)
     messenger = TelegramMessenger(bot_token="token", chat_id="-10001")
 
     with pytest.raises(MessengerError, match="Bad Request"):
@@ -61,7 +60,7 @@ def test_telegram_messenger_raises_on_invalid_json_payload(monkeypatch) -> None:
     def _fake_post(url, *, json, timeout):  # noqa: ANN001, ANN202
         return httpx.Response(status_code=200, text="not-json")
 
-    monkeypatch.setattr("berlin_insider.messenger.telegram.httpx.post", _fake_post)
+    monkeypatch.setattr("berlin_insider.feedback.messenger.telegram.httpx.post", _fake_post)
     messenger = TelegramMessenger(bot_token="token", chat_id="-10001")
 
     with pytest.raises(MessengerError, match="invalid JSON"):
@@ -92,7 +91,7 @@ def test_telegram_messenger_sends_feedback_buttons(monkeypatch) -> None:
         captured["json"] = json
         return httpx.Response(status_code=200, json={"ok": True, "result": {"message_id": 123}})
 
-    monkeypatch.setattr("berlin_insider.messenger.telegram.httpx.post", _fake_post)
+    monkeypatch.setattr("berlin_insider.feedback.messenger.telegram.httpx.post", _fake_post)
     messenger = TelegramMessenger(bot_token="token", chat_id="-10001")
     messenger.send_digest(
         text="Berlin Insider",
@@ -117,7 +116,7 @@ def test_telegram_messenger_does_not_send_feedback_buttons_without_metadata(monk
         captured["json"] = json
         return httpx.Response(status_code=200, json={"ok": True, "result": {"message_id": 123}})
 
-    monkeypatch.setattr("berlin_insider.messenger.telegram.httpx.post", _fake_post)
+    monkeypatch.setattr("berlin_insider.feedback.messenger.telegram.httpx.post", _fake_post)
     messenger = TelegramMessenger(bot_token="token", chat_id="-10001")
     messenger.send_digest(text="Berlin Insider")
     payload = captured["json"]
@@ -133,7 +132,7 @@ def test_telegram_messenger_registers_webhook(monkeypatch) -> None:
         captured["json"] = json
         return httpx.Response(status_code=200, json={"ok": True, "result": True})
 
-    monkeypatch.setattr("berlin_insider.messenger.telegram.httpx.post", _fake_post)
+    monkeypatch.setattr("berlin_insider.feedback.messenger.telegram.httpx.post", _fake_post)
     messenger = TelegramMessenger(bot_token="token", chat_id="-10001")
 
     messenger.set_webhook(url="https://example.com/telegram/webhook/secret")
@@ -150,7 +149,7 @@ def test_telegram_messenger_registers_webhook_with_explicit_ip(monkeypatch) -> N
         captured["json"] = json
         return httpx.Response(status_code=200, json={"ok": True, "result": True})
 
-    monkeypatch.setattr("berlin_insider.messenger.telegram.httpx.post", _fake_post)
+    monkeypatch.setattr("berlin_insider.feedback.messenger.telegram.httpx.post", _fake_post)
     messenger = TelegramMessenger(bot_token="token", chat_id="-10001")
 
     messenger.set_webhook(
@@ -177,7 +176,7 @@ def test_telegram_messenger_registers_webhook_with_certificate(monkeypatch, tmp_
         captured["has_files"] = files is not None
         return httpx.Response(status_code=200, json={"ok": True, "result": True})
 
-    monkeypatch.setattr("berlin_insider.messenger.telegram.httpx.post", _fake_post)
+    monkeypatch.setattr("berlin_insider.feedback.messenger.telegram.httpx.post", _fake_post)
     messenger = TelegramMessenger(bot_token="token", chat_id="-10001")
 
     messenger.set_webhook(
@@ -204,7 +203,7 @@ def test_telegram_messenger_registers_webhook_with_certificate_and_ip(
         captured["has_files"] = files is not None
         return httpx.Response(status_code=200, json={"ok": True, "result": True})
 
-    monkeypatch.setattr("berlin_insider.messenger.telegram.httpx.post", _fake_post)
+    monkeypatch.setattr("berlin_insider.feedback.messenger.telegram.httpx.post", _fake_post)
     messenger = TelegramMessenger(bot_token="token", chat_id="-10001")
 
     messenger.set_webhook(
@@ -229,7 +228,7 @@ def test_telegram_messenger_edits_feedback_markup(monkeypatch) -> None:
         payloads.append({"url": url, "json": json})
         return httpx.Response(status_code=200, json={"ok": True, "result": True})
 
-    monkeypatch.setattr("berlin_insider.messenger.telegram.httpx.post", _fake_post)
+    monkeypatch.setattr("berlin_insider.feedback.messenger.telegram.httpx.post", _fake_post)
     messenger = TelegramMessenger(bot_token="token", chat_id="-10001")
 
     messenger.edit_message_reply_markup(chat_id=-1000, message_id=42)

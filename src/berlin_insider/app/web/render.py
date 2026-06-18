@@ -5,7 +5,7 @@ from collections.abc import Sequence
 from dataclasses import asdict
 from html import escape
 
-from berlin_insider.web.models import (
+from berlin_insider.app.web.models import (
     DeliveriesResponse,
     DeliveryRow,
     FeedbackAggregateRow,
@@ -15,7 +15,7 @@ from berlin_insider.web.models import (
     OpsResponse,
     OverviewResponse,
 )
-from berlin_insider.web.render_helpers import (
+from berlin_insider.app.web.render_helpers import (
     _delivery_row,
     _display,
     _empty_state,
@@ -71,7 +71,8 @@ def _document_head() -> str:
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Berlin Insider</title>
-  <meta name="description" content="Public overview of Berlin Insider items, deliveries, feedback, and worker operations.">
+  <meta name="description"
+        content="Public overview of Berlin Insider items, deliveries, feedback, and ops.">
   <link rel="stylesheet" href="{STATIC_PATH}/site.css">
 </head>
 <body>
@@ -109,7 +110,10 @@ def _hero(overview: OverviewResponse) -> str:
       <div class="hero-grid">
         <div class="hero-copy">
           <h1>Berlin signals, rendered with restraint.</h1>
-          <p class="lede">A public read-only view into recent curation, delivery history, audience response, and worker health.</p>
+          <p class="lede">
+            A public read-only view into recent curation, delivery history,
+            audience response, and worker health.
+          </p>
         </div>
         <div class="hero-status">
           <span class="status-label">Last run status</span>
@@ -172,7 +176,8 @@ def _metrics(overview: OverviewResponse) -> str:
         ("Cache", overview.counts.detail_cache_entries),
     ]
     return "".join(
-        f'<article class="metric-card"><span>{escape(label)}</span><strong>{value}</strong></article>'
+        f'<article class="metric-card"><span>{escape(label)}</span>'
+        f"<strong>{value}</strong></article>"
         for label, value in cards
     )
 
@@ -200,9 +205,37 @@ def _filters(items: ItemsResponse) -> str:
     return f"""
         <form class="filters" id="items-filters">
           {_select("Source", "source", "filter-source", "All sources", items.available_sources)}
-          {_select("Category", "category", "filter-category", "All categories", items.available_categories)}
-          {_select("Summary", "has_summary", "filter-summary", "Any", ["true", "false"], ["With summary", "Without summary"])}
-          {_select("Timing", "timing", "filter-timing", "All", ["upcoming", "undated"], ["Upcoming", "Undated"])}
-          <label class="search-field"><span>Search</span><input type="search" name="search" id="filter-search" placeholder="Title, summary, or location"></label>
+          {
+        _select(
+            "Category",
+            "category",
+            "filter-category",
+            "All categories",
+            items.available_categories,
+        )
+    }
+          {
+        _select(
+            "Summary",
+            "has_summary",
+            "filter-summary",
+            "Any",
+            ["true", "false"],
+            ["With summary", "Without summary"],
+        )
+    }
+          {
+        _select(
+            "Timing",
+            "timing",
+            "filter-timing",
+            "All",
+            ["upcoming", "undated"],
+            ["Upcoming", "Undated"],
+        )
+    }
+          <label class="search-field"><span>Search</span><input type="search"
+            name="search" id="filter-search"
+            placeholder="Title, summary, or location"></label>
         </form>
 """

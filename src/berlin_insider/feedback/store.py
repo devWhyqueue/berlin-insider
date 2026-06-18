@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from berlin_insider.digest import DigestKind
 from berlin_insider.feedback.alternatives import find_daily_alternative
+from berlin_insider.feedback.messenger.formatter.digest import DigestKind
 from berlin_insider.feedback.models import (
     DeliveredItem,
     FeedbackEvent,

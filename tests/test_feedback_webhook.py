@@ -5,11 +5,11 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
-from berlin_insider.digest import DigestKind
+from berlin_insider.feedback.messenger.formatter.digest import DigestKind
+from berlin_insider.feedback.messenger.models import DeliveryResult
 from berlin_insider.feedback.models import DeliveredItem, MessageDeliveryRecord
 from berlin_insider.feedback.store import SqliteFeedbackStore, SqliteMessageDeliveryStore
 from berlin_insider.feedback.webhook import WebhookDependencies, create_webhook_app
-from berlin_insider.messenger.models import DeliveryResult
 from berlin_insider.parser.models import ParsedCategory
 from berlin_insider.storage.sqlite import ensure_schema, sqlite_connection
 

@@ -6,9 +6,9 @@ from dataclasses import replace
 from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
 
-from berlin_insider.fetcher.http import get_text_with_playwright, get_text_with_retries
 from berlin_insider.fetcher.models import FetchContext, FetchedItem
 from berlin_insider.fetcher.parsers.detail_extract import extract_detail_payload
+from berlin_insider.fetcher.support.http import get_text_with_playwright, get_text_with_retries
 from berlin_insider.storage.detail_cache_enrichment import enrich_one_with_cache
 
 MAX_DETAIL_WORKERS = 4

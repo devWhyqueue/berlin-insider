@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from html import escape
 
-from berlin_insider.web.models import (
+from berlin_insider.app.web.models import (
     DeliveryRow,
     DetailCacheEntryView,
     FeedbackAggregateRow,
@@ -38,7 +38,9 @@ def _delivery_row(row: DeliveryRow) -> str:
         <article class="timeline-row">
           <div class="timeline-mark"></div>
           <div class="timeline-body">
-            <p class="timeline-meta">{digest_kind} · {local_date} · message {telegram_message_id}</p>
+            <p class="timeline-meta">
+              {digest_kind} · {local_date} · message {telegram_message_id}
+            </p>
             <h3>{primary_title}</h3>
             <p>Sent at {sent_at}</p>
             <p>{alternative_text}</p>
@@ -160,8 +162,10 @@ def _panel(
     return (
         f'<section class="panel" aria-labelledby="{escape(panel_id)}">'
         '<div class="section-heading"><div>'
-        f'<p class="kicker">{escape(kicker)}</p><h2 id="{escape(panel_id)}">{escape(heading)}</h2>'
-        f'</div>{note_html}</div><div class="{escape(container_class)}" id="{escape(container_id)}">{body}</div></section>'
+        f'<p class="kicker">{escape(kicker)}</p>'
+        f'<h2 id="{escape(panel_id)}">{escape(heading)}</h2>'
+        f'</div>{note_html}</div><div class="{escape(container_class)}" '
+        f'id="{escape(container_id)}">{body}</div></section>'
     )
 
 
@@ -179,7 +183,8 @@ def _select(
         for value, text in zip(values, option_labels, strict=True)
     )
     return (
-        f'<label><span>{escape(label)}</span><select name="{escape(name)}" id="{escape(element_id)}">'
+        f'<label><span>{escape(label)}</span><select name="{escape(name)}" '
+        f'id="{escape(element_id)}">'
         f'<option value="">{escape(placeholder)}</option>{options}</select></label>'
     )
 
