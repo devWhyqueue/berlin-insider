@@ -22,7 +22,8 @@ def log_schedule_result(
 
 def _log_schedule_overview(logger: logging.Logger, result: ScheduleRunResult) -> None:
     logger.info(
-        "Schedule run: status=%s | executed=%s | due=%s | forced=%s | delivered=%s | local_date=%s | reason=%s",
+        "Schedule run: status=%s | executed=%s | due=%s | forced=%s | "
+        "delivered=%s | local_date=%s | reason=%s",
         result.status.value,
         result.executed,
         result.due,
@@ -42,7 +43,9 @@ def _log_schedule_overview(logger: logging.Logger, result: ScheduleRunResult) ->
 def _log_state_summary(logger: logging.Logger, result: ScheduleRunResult) -> None:
     state = result.state
     logger.info(
-        "Scheduler state: status=%s | attempt=%s | success=%s | error=%s | digest_len=%s | curated=%s | source_statuses=%s | failed_sources=%s | delivery_at=%s | delivery_message_id=%s | delivery_error=%s",
+        "Scheduler state: status=%s | attempt=%s | success=%s | error=%s | "
+        "digest_len=%s | curated=%s | source_statuses=%s | failed_sources=%s | "
+        "delivery_at=%s | delivery_message_id=%s | delivery_error=%s",
         state.last_status.value if isinstance(state.last_status, SchedulerStatus) else "n/a",
         state.last_attempt_at or "n/a",
         state.last_success_at or "n/a",

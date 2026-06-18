@@ -1,5 +1,6 @@
 .env
 .venv/
+.venv_win/
 __pycache__/
 .pytest_cache/
 .coverage
@@ -8,3 +9,4 @@ dist/
 build/
 .ruff_cache/
 .data/
+coverage.xml

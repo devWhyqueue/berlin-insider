@@ -73,7 +73,7 @@ class SqliteDetailCacheStore:
         canonical_url = canonicalize_url(url)
         now = now_utc_iso()
         with sqlite_connection(self._db_path) as conn:
-            row = conn.execute(
+            conn.execute(
                 """
                 UPDATE detail_cache
                 SET summary = ?, last_used_at = ?, updated_at = ?
