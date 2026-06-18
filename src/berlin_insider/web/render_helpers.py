@@ -189,10 +189,13 @@ def _source_row(row: SourceStatus) -> str:
         <article class="source-row">
           <p>{source_id}</p>
           <a href="{source_url}" target="_blank" rel="noreferrer">{source_url}</a>
-          <span>{adapter_kind}</span>
+          <span>{adapter_kind} · {item_count} items · {delivery_count} deliveries{never}</span>
         </article>
     """.format(
         source_id=escape(row.source_id),
         source_url=escape(row.source_url),
         adapter_kind=escape(row.adapter_kind),
+        item_count=row.item_count,
+        delivery_count=row.primary_delivery_count,
+        never=" · never used" if row.never_delivered else "",
     )

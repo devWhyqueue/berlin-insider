@@ -24,7 +24,9 @@ class _FakeMessenger:
         self.text_updates: list[tuple[object, int, str]] = []
         self.sent_messages: list[dict[str, object]] = []
 
-    def get_updates(self, *, offset: int | None = None, timeout_seconds: int = 0) -> list[dict[str, object]]:  # noqa: ARG002
+    def get_updates(
+        self, *, offset: int | None = None, timeout_seconds: int = 0
+    ) -> list[dict[str, object]]:  # noqa: ARG002
         return self._updates
 
     def answer_callback_query(self, *, callback_query_id: str) -> None:
@@ -70,7 +72,7 @@ def _insert_item(db_path: Path, *, url: str, title: str) -> DeliveredItem:
                 title,
                 None,
                 "Compact alternative summary.",
-                None,
+                "2026-02-23T12:00:00+00:00",
                 None,
                 "Pankow",
                 ParsedCategory.EVENT.value,
@@ -81,7 +83,9 @@ def _insert_item(db_path: Path, *, url: str, title: str) -> DeliveredItem:
                 "2026-02-23T08:00:00+00:00",
             ),
         )
-        item_id = int(conn.execute("SELECT item_id FROM items WHERE canonical_url = ?", (url,)).fetchone()[0])
+        item_id = int(
+            conn.execute("SELECT item_id FROM items WHERE canonical_url = ?", (url,)).fetchone()[0]
+        )
         conn.commit()
     return DeliveredItem(
         item_id=item_id,
@@ -90,7 +94,7 @@ def _insert_item(db_path: Path, *, url: str, title: str) -> DeliveredItem:
         summary="Compact alternative summary.",
         location="Pankow",
         category=ParsedCategory.EVENT,
-        event_start_at=None,
+        event_start_at="2026-02-23T12:00:00+00:00",
         event_end_at=None,
     )
 
@@ -103,7 +107,9 @@ def _insert_delivery(
     alternative_url: str | None = None,
 ) -> SqliteMessageDeliveryStore:
     primary_item = _insert_item(db_path, url=primary_url, title="Primary")
-    alternative_item = _insert_item(db_path, url=alternative_url, title="Alternative") if alternative_url else None
+    alternative_item = (
+        _insert_item(db_path, url=alternative_url, title="Alternative") if alternative_url else None
+    )
     store = SqliteMessageDeliveryStore(db_path)
     store.upsert(
         MessageDeliveryRecord(

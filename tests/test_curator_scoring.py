@@ -53,3 +53,15 @@ def test_score_penalizes_misc_category() -> None:
     misc = score_item(_item(category=ParsedCategory.MISC), event_in_window=True)
     event = score_item(_item(category=ParsedCategory.EVENT), event_in_window=True)
     assert event.total > misc.total
+
+
+def test_score_soft_penalizes_sources_with_delivery_history() -> None:
+    fresh = score_item(_item(), event_in_window=True, source_delivery_count=0)
+    repeated = score_item(_item(), event_in_window=True, source_delivery_count=10)
+    assert fresh.total > repeated.total
+
+
+def test_score_uses_bounded_feedback_adjustment() -> None:
+    liked = score_item(_item(), event_in_window=True, feedback_adjustment=99)
+    disliked = score_item(_item(), event_in_window=True, feedback_adjustment=-99)
+    assert liked.total > disliked.total

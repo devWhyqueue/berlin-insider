@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import logging
+from datetime import UTC, datetime
+from difflib import SequenceMatcher
 from typing import Protocol
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from berlin_insider.digest import DigestKind
 from berlin_insider.feedback.messages import render_daily_alternative_message
@@ -13,6 +16,10 @@ from berlin_insider.parser.models import ParsedCategory
 
 logger = logging.getLogger(__name__)
 _ALTERNATIVE_SUFFIX = "-alt1"
+try:
+    _BERLIN_TZ = ZoneInfo("Europe/Berlin")
+except ZoneInfoNotFoundError:
+    _BERLIN_TZ = UTC
 
 
 class AlternativeMessenger(Protocol):
@@ -38,18 +45,43 @@ def send_alternative_follow_up_if_needed(
         return
     if sent_message_store.get(alternative_message_key) is not None:
         return
+    alternative_item = _alternative_for_follow_up(
+        sent_message_store=sent_message_store,
+        sent_message=sent_message,
+    )
+    if alternative_item is None:
+        return
+    _send_and_persist_alternative(
+        messenger=messenger,
+        sent_message_store=sent_message_store,
+        sent_message=sent_message,
+        alternative_item=alternative_item,
+        message_key=alternative_message_key,
+    )
+
+
+def _send_and_persist_alternative(
+    *,
+    messenger: AlternativeMessenger,
+    sent_message_store: SqliteMessageDeliveryStore,
+    sent_message: MessageDeliveryRecord,
+    alternative_item,
+    message_key: str,
+) -> None:
     delivery = _deliver_alternative_message(
         messenger=messenger,
-        message_key=alternative_message_key,
+        message_key=message_key,
         sent_message=sent_message,
+        alternative_item=alternative_item,
     )
     if delivery is None:
         return
     _persist_alternative_message(
         sent_message_store=sent_message_store,
         sent_message=sent_message,
+        alternative_item=alternative_item,
         delivery=delivery,
-        message_key=alternative_message_key,
+        message_key=message_key,
     )
 
 
@@ -61,15 +93,70 @@ def _alternative_message_key(sent_message: MessageDeliveryRecord) -> str | None:
     return f"{sent_message.message_key}{_ALTERNATIVE_SUFFIX}"
 
 
+def _alternative_for_follow_up(*, sent_message_store, sent_message: MessageDeliveryRecord):
+    alternative = sent_message.alternative_item
+    if alternative is not None and _alternative_is_usable(
+        sent_message_store=sent_message_store,
+        sent_message=sent_message,
+        alternative=alternative,
+    ):
+        return alternative
+    return sent_message_store.find_daily_alternative(
+        local_date=sent_message.local_date,
+        excluded_urls={sent_message.primary_item.canonical_url},
+        excluded_title=sent_message.primary_item.title,
+    )
+
+
+def _alternative_is_usable(
+    *,
+    sent_message_store: SqliteMessageDeliveryStore,
+    sent_message: MessageDeliveryRecord,
+    alternative,
+) -> bool:
+    if alternative.canonical_url == sent_message.primary_item.canonical_url:
+        return False
+    if sent_message_store.has_primary_delivery(
+        canonical_url=alternative.canonical_url,
+        digest_kind=DigestKind.DAILY,
+    ):
+        return False
+    if _same_title(alternative.title, sent_message.primary_item.title):
+        return False
+    return _local_date(alternative.event_start_at) == sent_message.local_date
+
+
+def _local_date(value: str | None) -> str | None:
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(_BERLIN_TZ).date().isoformat()
+
+
+def _title_key(value: str | None) -> str:
+    return " ".join((value or "").casefold().split())
+
+
+def _same_title(left: str | None, right: str | None) -> bool:
+    left_key = _title_key(left)
+    right_key = _title_key(right)
+    if not left_key or not right_key:
+        return False
+    return SequenceMatcher(None, left_key, right_key).ratio() >= 0.88
+
+
 def _deliver_alternative_message(
     *,
     messenger: AlternativeMessenger,
     message_key: str,
     sent_message: MessageDeliveryRecord,
+    alternative_item,
 ) -> DeliveryResult | None:
-    alternative_item = sent_message.alternative_item
-    if alternative_item is None:
-        return None
     try:
         return messenger.send_digest(
             text=render_daily_alternative_message(
@@ -92,12 +179,10 @@ def _persist_alternative_message(
     *,
     sent_message_store: SqliteMessageDeliveryStore,
     sent_message: MessageDeliveryRecord,
+    alternative_item,
     delivery: DeliveryResult,
     message_key: str,
 ) -> None:
-    alternative_item = sent_message.alternative_item
-    if alternative_item is None:
-        return
     sent_message_store.upsert(
         MessageDeliveryRecord(
             message_key=message_key,

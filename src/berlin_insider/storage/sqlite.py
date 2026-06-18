@@ -39,10 +39,16 @@ CREATE TABLE IF NOT EXISTS items (
   original_url TEXT,
   title TEXT,
   description TEXT,
+  clean_text TEXT,
   summary TEXT,
   event_start_at TEXT,
   event_end_at TEXT,
+  event_date_source TEXT,
   location TEXT,
+  price_text TEXT,
+  price_amount REAL,
+  price_currency TEXT,
+  is_free INTEGER,
   category TEXT,
   category_confidence REAL,
   weekend_relevance TEXT,
@@ -94,11 +100,22 @@ CREATE TABLE IF NOT EXISTS detail_cache (
 );
 
 CREATE INDEX IF NOT EXISTS idx_items_source_id ON items (source_id);
-CREATE INDEX IF NOT EXISTS idx_message_deliveries_primary_item_id ON message_deliveries (primary_item_id);
-CREATE INDEX IF NOT EXISTS idx_message_deliveries_alternative_item_id ON message_deliveries (alternative_item_id);
+CREATE INDEX IF NOT EXISTS idx_message_deliveries_primary_item_id
+ON message_deliveries (primary_item_id);
+CREATE INDEX IF NOT EXISTS idx_message_deliveries_alternative_item_id
+ON message_deliveries (alternative_item_id);
 CREATE INDEX IF NOT EXISTS idx_detail_cache_last_used_at ON detail_cache (last_used_at);
 CREATE INDEX IF NOT EXISTS idx_detail_cache_source_id ON detail_cache (source_id);
 """
+
+_ITEM_OPTIONAL_COLUMNS = {
+    "clean_text": "TEXT",
+    "event_date_source": "TEXT",
+    "price_text": "TEXT",
+    "price_amount": "REAL",
+    "price_currency": "TEXT",
+    "is_free": "INTEGER",
+}
 
 
 def ensure_schema(path: Path) -> None:
@@ -106,8 +123,10 @@ def ensure_schema(path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with sqlite_connection(path) as conn:
         conn.executescript(SCHEMA)
-        _ensure_detail_cache_column(
+        _ensure_item_columns(conn)
+        _ensure_column(
             conn,
+            table_name="detail_cache",
             column_name="detail_metadata_json",
             definition="TEXT NOT NULL DEFAULT '{}'",
         )
@@ -115,14 +134,24 @@ def ensure_schema(path: Path) -> None:
         conn.commit()
 
 
-def _ensure_detail_cache_column(
-    conn: sqlite3.Connection, *, column_name: str, definition: str
+def _ensure_item_columns(conn: sqlite3.Connection) -> None:
+    for column_name, definition in _ITEM_OPTIONAL_COLUMNS.items():
+        _ensure_column(
+            conn,
+            table_name="items",
+            column_name=column_name,
+            definition=definition,
+        )
+
+
+def _ensure_column(
+    conn: sqlite3.Connection, *, table_name: str, column_name: str, definition: str
 ) -> None:
-    columns = conn.execute("PRAGMA table_info(detail_cache)").fetchall()
+    columns = conn.execute(f"PRAGMA table_info({table_name})").fetchall()
     existing_names = {str(column[1]) for column in columns}
     if column_name in existing_names:
         return
-    conn.execute(f"ALTER TABLE detail_cache ADD COLUMN {column_name} {definition}")
+    conn.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {definition}")
 
 
 def _cleanup_placeholder_sources(conn: sqlite3.Connection) -> None:

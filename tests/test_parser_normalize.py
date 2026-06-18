@@ -129,7 +129,7 @@ def test_normalize_falls_back_to_snippet_when_detail_missing() -> None:
     assert parsed.description == "Listing-only summary"
 
 
-def test_normalize_prefers_page_date_metadata_over_published_at() -> None:
+def test_normalize_ignores_page_date_metadata_as_event_date() -> None:
     item = _item(
         source_id=SourceId.VISIT_BERLIN_BLOG,
         published_at=datetime(2017, 2, 28, 6, 26, 24, tzinfo=UTC),
@@ -140,7 +140,7 @@ def test_normalize_prefers_page_date_metadata_over_published_at() -> None:
         reference_now=datetime(2026, 3, 12, 10, 0, tzinfo=UTC),
     )
     assert parsed.event_start_at is not None
-    assert parsed.event_start_at.date().isoformat() == "2026-03-10"
+    assert parsed.event_start_at.date().isoformat() == "2017-02-28"
 
 
 def test_normalize_uses_detail_location_when_listing_missing() -> None:
@@ -152,3 +152,24 @@ def test_normalize_uses_detail_location_when_listing_missing() -> None:
         reference_now=datetime(2026, 2, 27, 10, 0, tzinfo=UTC),
     )
     assert parsed.location == "Maybachufer, Neukölln"
+
+
+def test_normalize_keeps_clean_text_and_price_metadata() -> None:
+    item = _item(
+        detail_text="Useful event details. Cookie banner junk.",
+        published_at=datetime(2026, 2, 28, 10, 0, tzinfo=UTC),
+    )
+    item.metadata = {
+        "price_text": "12 EUR",
+        "price_amount": "12",
+        "price_currency": "EUR",
+        "is_free": "false",
+    }
+    parsed = normalize_fetched_item(
+        item,
+        reference_now=datetime(2026, 2, 27, 10, 0, tzinfo=UTC),
+    )
+    assert parsed.clean_text == "Useful event details."
+    assert parsed.price_amount == 12.0
+    assert parsed.price_currency == "EUR"
+    assert parsed.is_free is False

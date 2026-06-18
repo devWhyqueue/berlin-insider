@@ -89,7 +89,7 @@ class OpenAISummaryGenerator:
 
 
 def _summary_input_text(item: ParsedItem) -> str | None:
-    body = (item.detail_text or item.description or "").strip()
+    body = (item.clean_text or item.detail_text or item.description or "").strip()
     if not body:
         return None
     title = (item.title or "Untitled").strip()

@@ -6,6 +6,8 @@ from typing import Any
 
 from bs4 import BeautifulSoup
 
+from berlin_insider.fetcher.parsers.price import extract_price_metadata, price_metadata_from_offer
+
 MIN_DETAIL_LENGTH = 60
 JSONLD_BODY_KEYS = ("articleBody", "text", "description")
 BOILERPLATE_SELECTORS = (
@@ -31,6 +33,7 @@ def extract_detail_payload(html: str) -> tuple[str | None, dict[str, str]]:
     jsonld_text = _extract_jsonld_text(soup)
     if _is_meaningful(jsonld_text):
         detail_metadata.update(_extract_location_metadata(_require_text(jsonld_text)))
+        detail_metadata.update(extract_price_metadata(_require_text(jsonld_text)))
         return jsonld_text, detail_metadata
     _strip_boilerplate(soup)
     for selector in ("article", "main", "body"):
@@ -38,6 +41,7 @@ def extract_detail_payload(html: str) -> tuple[str | None, dict[str, str]]:
         candidate = _normalize_text(node.get_text(" ", strip=True)) if node else None
         if _is_meaningful(candidate):
             detail_metadata.update(_extract_location_metadata(_require_text(candidate)))
+            detail_metadata.update(extract_price_metadata(_require_text(candidate)))
             return candidate, detail_metadata
     return None, detail_metadata
 
@@ -168,6 +172,8 @@ def _event_metadata_from_mapping(payload: dict[str, Any]) -> dict[str, str]:
         metadata["start_date"] = start_date
     if end_date:
         metadata["end_date"] = end_date
+    offers = payload.get("offers")
+    metadata.update(price_metadata_from_offer(offers))
     return metadata
 
 

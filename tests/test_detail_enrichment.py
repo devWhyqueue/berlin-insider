@@ -77,6 +77,22 @@ def test_extract_detail_payload_captures_jsonld_event_dates() -> None:
     assert detail_metadata == {"start_date": "2026-03-14", "end_date": "2026-03-15"}
 
 
+def test_extract_detail_payload_captures_jsonld_offer_price() -> None:
+    html = """
+    <html><body>
+      <article>Long enough event detail text with pricing metadata for parser enrichment.</article>
+      <script type="application/ld+json">
+        {"@type":"Event","startDate":"2026-03-14","offers":{"price":"12.50","priceCurrency":"EUR"}}
+      </script>
+    </body></html>
+    """
+    _, detail_metadata = extract_detail_payload(html)
+    assert detail_metadata["price_text"] == "12.50 EUR"
+    assert detail_metadata["price_amount"] == "12.50"
+    assert detail_metadata["price_currency"] == "EUR"
+    assert detail_metadata["is_free"] == "false"
+
+
 def test_extract_detail_payload_captures_visible_page_date_and_location() -> None:
     html = """
     <html>

@@ -46,7 +46,13 @@ class ParsedItem:
     parse_notes: list[str] = field(default_factory=list)
     raw: dict[str, Any] = field(default_factory=dict)
     detail_text: str | None = None
+    clean_text: str | None = None
     summary: str | None = None
+    price_text: str | None = None
+    price_amount: float | None = None
+    price_currency: str | None = None
+    is_free: bool | None = None
+    event_date_source: str | None = None
 
 
 @dataclass(slots=True)

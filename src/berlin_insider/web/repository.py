@@ -152,7 +152,8 @@ class _PublicSiteRepository:
         return self._fetchall(
             """
             SELECT canonical_url, source_id, detail_status, summary, first_fetched_at,
-                   last_fetched_at, last_used_at, updated_at, LENGTH(detail_text), detail_metadata_json
+                   last_fetched_at, last_used_at, updated_at, LENGTH(detail_text),
+                   detail_metadata_json
             FROM detail_cache
             ORDER BY last_used_at DESC, updated_at DESC
             LIMIT 12
@@ -168,7 +169,17 @@ class _PublicSiteRepository:
 
     def _source_rows(self) -> list[tuple[object, ...]]:
         return self._fetchall(
-            "SELECT source_id, source_url, adapter_kind, updated_at FROM sources ORDER BY source_id"
+            """
+            SELECT sources.source_id, sources.source_url, sources.adapter_kind, sources.updated_at,
+                   COUNT(DISTINCT items.item_id),
+                   COUNT(DISTINCT deliveries.message_key)
+            FROM sources
+            LEFT JOIN items ON items.source_id = sources.source_id
+            LEFT JOIN message_deliveries deliveries
+              ON deliveries.primary_item_id = items.item_id
+            GROUP BY sources.source_id, sources.source_url, sources.adapter_kind, sources.updated_at
+            ORDER BY sources.source_id
+            """
         )
 
     def _telegram_state_row(self) -> tuple[object, ...] | None:

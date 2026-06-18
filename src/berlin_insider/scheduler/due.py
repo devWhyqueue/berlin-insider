@@ -75,6 +75,7 @@ def persist_sent_message(
         digest_kind=digest_kind,
         pipeline_result=pipeline_result,
         item_store=item_store,
+        local_date=local_date,
     )
     store.upsert(
         MessageDeliveryRecord(
@@ -94,6 +95,7 @@ def alternative_item_for_sent_message(
     digest_kind: DigestKind,
     pipeline_result: FullPipelineRunResult,
     item_store: SqliteItemStore,
+    local_date: str,
 ) -> DeliveredItem | None:
     """Resolve one persisted alternative item for daily follow-up messaging."""
     if digest_kind != DigestKind.DAILY:
@@ -104,6 +106,7 @@ def alternative_item_for_sent_message(
     alternative_item = _first_alternative_parsed_item(
         pipeline_result=pipeline_result,
         excluded_urls={selected_urls[0]},
+        local_date=local_date,
     )
     if alternative_item is None:
         return None
@@ -114,14 +117,21 @@ def _first_alternative_parsed_item(
     *,
     pipeline_result: FullPipelineRunResult,
     excluded_urls: set[str],
+    local_date: str,
 ) -> ParsedItem | None:
     for source_result in pipeline_result.curate_result.results:
         for dropped in source_result.dropped_items:
-            if dropped.reason not in {DropReason.LOW_SCORE, DropReason.UNKNOWN_WEEKEND_RELEVANCE}:
+            if dropped.reason != DropReason.LOW_SCORE:
                 continue
             item = dropped.item
             url = item.item_url.strip()
             if not url or url in excluded_urls:
+                continue
+            if (
+                item.event_start_at is None
+                or _local_now(item.event_start_at, timezone_name="Europe/Berlin").date().isoformat()
+                != local_date
+            ):
                 continue
             return item
     return None
@@ -143,7 +153,7 @@ def _to_delivered_item(item_record) -> DeliveredItem:  # noqa: ANN001
         item_id=item_record.item_id,
         canonical_url=item_record.canonical_url,
         title=item_record.title,
-        summary=item_record.summary,
+        summary=item_record.summary or item_record.description,
         location=item_record.location,
         category=item_record.category,
         event_start_at=item_record.event_start_at,

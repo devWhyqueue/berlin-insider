@@ -186,7 +186,7 @@ def _execute_due_run(
     messenger_instance = messenger or TelegramMessenger.from_env()
     feedback_metadata = (
         FeedbackMetadata(digest_kind=digest_kind, message_key=message_key)
-        if digest_kind == DigestKind.DAILY
+        if digest_kind == DigestKind.DAILY and pipeline_result.curate_result.selected_items
         else None
     )
     try:

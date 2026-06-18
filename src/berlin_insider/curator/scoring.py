@@ -12,13 +12,21 @@ class ScoreBreakdown:
     notes: list[str]
 
 
-def score_item(item: ParsedItem, *, event_in_window: bool) -> ScoreBreakdown:
+def score_item(
+    item: ParsedItem,
+    *,
+    event_in_window: bool,
+    source_delivery_count: int = 0,
+    feedback_adjustment: float = 0.0,
+) -> ScoreBreakdown:
     """Compute deterministic curation score from parser confidence and completeness."""
     weekend_points = _weekend_points(item.weekend_relevance, event_in_window)
     category_points = max(0.0, min(item.category_confidence, 1.0)) * 0.30
     quality_points = _quality_points(item)
-    penalties = _penalties(item)
-    score = weekend_points + category_points + quality_points - penalties
+    source_penalty = min(source_delivery_count, 10) * 0.01
+    penalties = _penalties(item) + source_penalty
+    feedback_points = max(-0.08, min(feedback_adjustment, 0.08))
+    score = weekend_points + category_points + quality_points + feedback_points - penalties
     notes = [
         f"weekend={weekend_points:.2f}",
         f"category={category_points:.2f}",
@@ -28,6 +36,10 @@ def score_item(item: ParsedItem, *, event_in_window: bool) -> ScoreBreakdown:
         notes.append("penalty=misc")
     if item.weekend_confidence < 0.35:
         notes.append("penalty=weak_weekend")
+    if source_penalty:
+        notes.append(f"penalty=source_history:{source_penalty:.2f}")
+    if feedback_points:
+        notes.append(f"feedback={feedback_points:.2f}")
     return ScoreBreakdown(total=round(score, 4), notes=notes)
 
 

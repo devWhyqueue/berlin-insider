@@ -121,7 +121,12 @@ class Curator:
         ):
             source_drops.append(DroppedItem(item=item, reason=DropReason.OUTSIDE_WEEKEND_WINDOW))
             return None
-        scoring = score_item(item, event_in_window=in_window)
+        scoring = score_item(
+            item,
+            event_in_window=in_window,
+            source_delivery_count=store.source_delivery_count(item.source_id.value),
+            feedback_adjustment=store.feedback_adjustment(item),
+        )
         return Candidate(
             item=item,
             source_index=source_index,

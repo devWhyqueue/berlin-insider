@@ -1,6 +1,7 @@
 from datetime import UTC, datetime
 from pathlib import Path
 
+import berlin_insider.scheduler.orchestrator as scheduler_module
 from berlin_insider.curator.models import (
     CuratedItem,
     CurateRunResult,
@@ -10,12 +11,15 @@ from berlin_insider.curator.models import (
     SourceCurateResult,
 )
 from berlin_insider.digest import DigestKind
-from berlin_insider.fetcher.models import SourceId
-from berlin_insider.messenger.models import DeliveryResult, MessengerError
-import berlin_insider.scheduler.orchestrator as scheduler_module
 from berlin_insider.feedback.store import SqliteMessageDeliveryStore
-from berlin_insider.fetcher.models import FetchRunResult
-from berlin_insider.parser.models import ParsedCategory, ParsedItem, ParseRunResult, WeekendRelevance
+from berlin_insider.fetcher.models import FetchRunResult, SourceId
+from berlin_insider.messenger.models import DeliveryResult, MessengerError
+from berlin_insider.parser.models import (
+    ParsedCategory,
+    ParsedItem,
+    ParseRunResult,
+    WeekendRelevance,
+)
 from berlin_insider.pipeline import FullPipelineRunResult
 from berlin_insider.scheduler.models import ScheduleConfig, SchedulerState, SchedulerStatus
 
@@ -84,7 +88,7 @@ def _parsed_item(url: str) -> ParsedItem:
         item_url=url,
         title="Title",
         description=None,
-        event_start_at=datetime(2026, 2, 27, 12, 0, tzinfo=UTC),
+        event_start_at=datetime(2026, 2, 23, 12, 0, tzinfo=UTC),
         event_end_at=None,
         location=None,
         category=ParsedCategory.EVENT,
@@ -104,7 +108,10 @@ def _daily_curate_with_alternative() -> CurateRunResult:
                 status=CurateStatus.PARTIAL,
                 selected_items=[],
                 dropped_items=[
-                    DroppedItem(item=_parsed_item("https://example.com/alternative"), reason=DropReason.LOW_SCORE)
+                    DroppedItem(
+                        item=_parsed_item("https://example.com/alternative"),
+                        reason=DropReason.LOW_SCORE,
+                    )
                 ],
                 warnings=[],
                 error_message=None,
@@ -252,6 +259,32 @@ def test_scheduler_omits_feedback_metadata_for_weekend(monkeypatch, tmp_path: Pa
         target_items=7,
         force=True,
         now_utc=datetime(2026, 2, 27, 8, 0, tzinfo=UTC),
+        messenger=messenger,
+    )
+    assert result.executed is True
+    assert messenger.feedback_metadata is None
+
+
+def test_scheduler_omits_feedback_metadata_for_empty_daily(monkeypatch, tmp_path: Path) -> None:
+    def _fake_run_full_pipeline(**kwargs):  # noqa: ANN003, ANN202
+        return FullPipelineRunResult(
+            fetch_result=_empty_fetch(),
+            parse_result=_empty_parse(),
+            curate_result=_empty_curate(),
+            digest="No strong tip found today.",
+            digest_kind=DigestKind.DAILY,
+        )
+
+    monkeypatch.setattr(scheduler_module, "run_full_pipeline", _fake_run_full_pipeline)
+    store = _MemoryStateStore()
+    messenger = _FakeMessenger()
+    result = scheduler_module.Scheduler().run_once(
+        state_store=store,  # type: ignore[arg-type]
+        config=ScheduleConfig(timezone="UTC"),
+        db_path=tmp_path / "berlin_insider.db",
+        target_items=7,
+        force=False,
+        now_utc=datetime(2026, 2, 23, 8, 0, tzinfo=UTC),
         messenger=messenger,
     )
     assert result.executed is True

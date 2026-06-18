@@ -107,7 +107,7 @@
               <article class="source-row">
                 <p>${htmlEscape(source.source_id)}</p>
                 <a href="${htmlEscape(source.source_url)}" target="_blank" rel="noreferrer">${htmlEscape(source.source_url)}</a>
-                <span>${htmlEscape(source.adapter_kind)}</span>
+                <span>${htmlEscape(source.adapter_kind)} · ${source.item_count} items · ${source.primary_delivery_count} deliveries${source.never_delivered ? " · never used" : ""}</span>
               </article>
             `,
           )

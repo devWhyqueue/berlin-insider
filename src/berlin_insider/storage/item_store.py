@@ -1,27 +1,23 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 from pathlib import Path
 
 from berlin_insider.fetcher.models import SourceId
 from berlin_insider.fetcher.sources import SOURCES
-from berlin_insider.parser.models import ParsedCategory, ParsedItem, ParseRunResult
+from berlin_insider.parser.models import ParsedItem, ParseRunResult
+from berlin_insider.storage.item_record import ItemRecord, row_to_item_record
 from berlin_insider.storage.sqlite import ensure_schema, now_utc_iso, sqlite_connection
 from berlin_insider.storage.url_normalize import canonicalize_url
 
-
-@dataclass(slots=True)
-class ItemRecord:
-    item_id: int
-    canonical_url: str
-    source_id: str
-    title: str | None
-    description: str | None
-    summary: str | None
-    event_start_at: str | None
-    event_end_at: str | None
-    location: str | None
-    category: ParsedCategory | None
+_GET_ITEM_BY_URL_SQL = """
+SELECT
+    item_id, canonical_url, source_id, original_url, title, description, clean_text,
+    summary, event_start_at, event_end_at, event_date_source, location, price_text,
+    price_amount, price_currency, is_free, category
+FROM items
+WHERE canonical_url = ?
+LIMIT 1
+"""
 
 
 class SqliteItemStore:
@@ -49,27 +45,8 @@ class SqliteItemStore:
         """Return one durable item record by canonical URL."""
         canonical_url = canonicalize_url(url)
         with sqlite_connection(self._db_path) as conn:
-            row = conn.execute(
-                """
-                SELECT
-                    item_id,
-                    canonical_url,
-                    source_id,
-                    original_url,
-                    title,
-                    description,
-                    summary,
-                    event_start_at,
-                    event_end_at,
-                    location,
-                    category
-                FROM items
-                WHERE canonical_url = ?
-                LIMIT 1
-                """,
-                (canonical_url,),
-            ).fetchone()
-        return _row_to_item_record(row)
+            row = conn.execute(_GET_ITEM_BY_URL_SQL, (canonical_url,)).fetchone()
+        return row_to_item_record(row)
 
 
 def upsert_source_websites(db_path: Path) -> None:
@@ -111,10 +88,16 @@ def _item_values(*, item: ParsedItem, now: str) -> tuple[object, ...]:
         item.item_url,
         item.title,
         item.description,
+        item.clean_text,
         item.summary,
         item.event_start_at.isoformat() if item.event_start_at is not None else None,
         item.event_end_at.isoformat() if item.event_end_at is not None else None,
+        item.event_date_source,
         item.location,
+        item.price_text,
+        item.price_amount,
+        item.price_currency,
+        int(item.is_free) if item.is_free is not None else None,
         item.category.value,
         item.category_confidence,
         item.weekend_relevance.value,
@@ -134,26 +117,38 @@ def _upsert_item(conn, *, item: ParsedItem, now: str) -> None:  # noqa: ANN001
             original_url,
             title,
             description,
+            clean_text,
             summary,
             event_start_at,
             event_end_at,
+            event_date_source,
             location,
+            price_text,
+            price_amount,
+            price_currency,
+            is_free,
             category,
             category_confidence,
             weekend_relevance,
             weekend_confidence,
             created_at,
             updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(canonical_url) DO UPDATE SET
             source_id = excluded.source_id,
             original_url = excluded.original_url,
             title = excluded.title,
             description = excluded.description,
+            clean_text = excluded.clean_text,
             summary = excluded.summary,
             event_start_at = excluded.event_start_at,
             event_end_at = excluded.event_end_at,
+            event_date_source = excluded.event_date_source,
             location = excluded.location,
+            price_text = excluded.price_text,
+            price_amount = excluded.price_amount,
+            price_currency = excluded.price_currency,
+            is_free = excluded.is_free,
             category = excluded.category,
             category_confidence = excluded.category_confidence,
             weekend_relevance = excluded.weekend_relevance,
@@ -199,25 +194,3 @@ def _configured_source(source_id: str):  # noqa: ANN202
     except ValueError:
         return None
     return SOURCES.get(source_key)
-
-
-def _row_to_item_record(row: tuple[object, ...] | None) -> ItemRecord | None:
-    if row is None:
-        return None
-    item_id = row[0]
-    if not isinstance(item_id, int):
-        return None
-    category_raw = str(row[10]).strip() if row[10] is not None else None
-    category = ParsedCategory(category_raw) if category_raw else None
-    return ItemRecord(
-        item_id=item_id,
-        canonical_url=str(row[1]),
-        source_id=str(row[2]),
-        title=str(row[4]) if row[4] is not None else None,
-        description=str(row[5]) if row[5] is not None else None,
-        summary=str(row[6]) if row[6] is not None else None,
-        event_start_at=str(row[7]) if row[7] is not None else None,
-        event_end_at=str(row[8]) if row[8] is not None else None,
-        location=str(row[9]) if row[9] is not None else None,
-        category=category,
-    )

@@ -100,6 +100,9 @@ class SourceStatus:
     source_url: str
     adapter_kind: str
     updated_at: str
+    item_count: int = 0
+    primary_delivery_count: int = 0
+    never_delivered: bool = True
 
 
 @dataclass(slots=True)

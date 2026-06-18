@@ -53,7 +53,13 @@ def _make_update(*, callback_data: str, callback_id: str = "cb-1") -> dict[str, 
     }
 
 
-def _insert_item(db_path: Path, *, url: str, title: str = "Title") -> DeliveredItem:
+def _insert_item(
+    db_path: Path,
+    *,
+    url: str,
+    title: str = "Title",
+    event_start_at: str | None = "2026-02-28T12:00:00+00:00",
+) -> DeliveredItem:
     ensure_schema(db_path)
     with sqlite_connection(db_path) as conn:
         conn.execute(
@@ -79,7 +85,7 @@ def _insert_item(db_path: Path, *, url: str, title: str = "Title") -> DeliveredI
                 title,
                 None,
                 "Compact alternative summary.",
-                None,
+                event_start_at,
                 None,
                 "Pankow",
                 ParsedCategory.EVENT.value,
@@ -90,7 +96,9 @@ def _insert_item(db_path: Path, *, url: str, title: str = "Title") -> DeliveredI
                 "2026-02-28T08:00:00+00:00",
             ),
         )
-        item_id = int(conn.execute("SELECT item_id FROM items WHERE canonical_url = ?", (url,)).fetchone()[0])
+        item_id = int(
+            conn.execute("SELECT item_id FROM items WHERE canonical_url = ?", (url,)).fetchone()[0]
+        )
         conn.commit()
     return DeliveredItem(
         item_id=item_id,
@@ -99,7 +107,7 @@ def _insert_item(db_path: Path, *, url: str, title: str = "Title") -> DeliveredI
         summary="Compact alternative summary.",
         location="Pankow",
         category=ParsedCategory.EVENT,
-        event_start_at=None,
+        event_start_at=event_start_at,
         event_end_at=None,
     )
 
@@ -113,7 +121,9 @@ def _insert_delivery(
     alternative_url: str | None = None,
 ) -> SqliteMessageDeliveryStore:
     primary_item = _insert_item(db_path, url=primary_url, title="Primary")
-    alternative_item = _insert_item(db_path, url=alternative_url, title="Alternative") if alternative_url else None
+    alternative_item = (
+        _insert_item(db_path, url=alternative_url, title="Alternative") if alternative_url else None
+    )
     store = SqliteMessageDeliveryStore(db_path)
     store.upsert(
         MessageDeliveryRecord(
@@ -127,6 +137,10 @@ def _insert_delivery(
         )
     )
     return store
+
+
+def _insert_candidate_item(db_path: Path, *, url: str, title: str) -> DeliveredItem:
+    return _insert_item(db_path, url=url, title=title)
 
 
 def test_webhook_persists_feedback_and_acks(tmp_path: Path) -> None:
@@ -264,6 +278,49 @@ def test_webhook_daily_downvote_sends_single_alternative_follow_up(tmp_path: Pat
     assert "Berlin Insider \\| Tip of the Day" in sent_text
     assert "Compact alternative summary\\." in sent_text
     assert delivery_store.get("daily-2026-02-28-abc-alt1") is not None
+
+
+def test_webhook_downvote_finds_dynamic_same_day_alternative(tmp_path: Path) -> None:
+    db_path = tmp_path / "berlin_insider.db"
+    primary_item = _insert_item(db_path, url="https://example.com/primary", title="Primary")
+    wrong_date_alt = _insert_item(
+        db_path,
+        url="https://example.com/wrong-date",
+        title="Wrong Date",
+        event_start_at="2026-03-01T12:00:00+00:00",
+    )
+    _insert_candidate_item(db_path, url="https://example.com/dynamic", title="Dynamic Pick")
+    delivery_store = SqliteMessageDeliveryStore(db_path)
+    delivery_store.upsert(
+        MessageDeliveryRecord(
+            message_key="daily-2026-02-28-abc",
+            digest_kind=DigestKind.DAILY,
+            local_date="2026-02-28",
+            sent_at="2026-02-28T08:00:00+00:00",
+            telegram_message_id="42",
+            primary_item=primary_item,
+            alternative_item=wrong_date_alt,
+        )
+    )
+    feedback_store = SqliteFeedbackStore(db_path)
+    messenger = _FakeMessenger()
+    app = create_webhook_app(
+        deps=WebhookDependencies(
+            messenger=messenger,  # type: ignore[arg-type]
+            feedback_store=feedback_store,
+            sent_message_store=delivery_store,
+            secret="secret123",
+        )
+    )
+
+    response = TestClient(app).post(
+        "/telegram/webhook/secret123",
+        json=_make_update(callback_data="fb:v1:daily:daily-2026-02-28-abc:down"),
+    )
+
+    assert response.status_code == 200
+    assert len(messenger.sent_messages) == 1
+    assert "Dynamic Pick" in str(messenger.sent_messages[0]["text"])
 
 
 def test_webhook_downvote_on_alt_message_does_not_chain(tmp_path: Path) -> None:

@@ -42,10 +42,16 @@ def test_persist_items_upserts_deduplicated_items(tmp_path: Path) -> None:
                         item_url="https://example.com/item?utm_source=test",
                         title="Item",
                         description="Desc",
+                        clean_text="Clean detail text",
                         summary="Summary",
                         event_start_at=datetime(2026, 2, 28, 18, 0, tzinfo=UTC),
                         event_end_at=None,
+                        event_date_source="metadata.start_date",
                         location="Berlin",
+                        price_text="12 EUR",
+                        price_amount=12.0,
+                        price_currency="EUR",
+                        is_free=False,
                         category=ParsedCategory.EVENT,
                         category_confidence=0.9,
                         weekend_relevance=WeekendRelevance.LIKELY_THIS_WEEKEND,
@@ -67,7 +73,7 @@ def test_persist_items_upserts_deduplicated_items(tmp_path: Path) -> None:
     with sqlite_connection(db_path) as conn:
         row = conn.execute(
             """
-            SELECT source_id, canonical_url, title, summary
+            SELECT source_id, canonical_url, title, summary, clean_text, price_amount, is_free
             FROM items
             """
         ).fetchone()
@@ -79,6 +85,9 @@ def test_persist_items_upserts_deduplicated_items(tmp_path: Path) -> None:
     assert row[1] == canonicalize_url("https://example.com/item?utm_source=test")
     assert row[2] == "Item"
     assert row[3] == "Summary"
+    assert row[4] == "Clean detail text"
+    assert row[5] == 12.0
+    assert row[6] == 0
 
 
 def test_persist_items_uses_configured_source_metadata(tmp_path: Path) -> None:

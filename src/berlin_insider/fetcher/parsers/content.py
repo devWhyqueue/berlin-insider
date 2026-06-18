@@ -208,6 +208,7 @@ def _telegram_item(
     if not post_id:
         return None
     text_node = wrapper.select_one(".tgme_widget_message_text")
+    text = text_node.get_text(" ", strip=True) if text_node else None
     time_node = wrapper.select_one("time")
     href_node = wrapper.select_one(".tgme_widget_message_date")
     link = href_node.get("href", "").strip() if href_node else f"https://t.me/{post_id}"
@@ -215,12 +216,21 @@ def _telegram_item(
         source_id=definition.source_id,
         source_url=definition.source_url,
         item_url=link,
-        title=None,
+        title=_telegram_title(text),
         published_at=parse_datetime(time_node.get("datetime") if time_node else None),
         raw_date_text=time_node.get_text(" ", strip=True) if time_node else None,
-        snippet=text_node.get_text(" ", strip=True) if text_node else None,
+        snippet=text,
         location_hint=None,
         fetch_method=FetchMethod.TELEGRAM_HTML,
         collected_at=aware(context.collected_at),
         metadata={"post_id": post_id},
     )
+
+
+def _telegram_title(text: str | None) -> str | None:
+    if not text:
+        return None
+    first_line = text.splitlines()[0].strip()
+    if not first_line:
+        return None
+    return first_line[:80].rstrip()

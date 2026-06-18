@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from berlin_insider.digest import DigestKind
+from berlin_insider.feedback.alternatives import find_daily_alternative
 from berlin_insider.feedback.models import (
     DeliveredItem,
     FeedbackEvent,
@@ -55,7 +56,7 @@ SELECT
     primary_item.item_id,
     primary_item.canonical_url,
     primary_item.title,
-    primary_item.summary,
+    COALESCE(primary_item.summary, primary_item.description),
     primary_item.location,
     primary_item.category,
     primary_item.event_start_at,
@@ -63,7 +64,7 @@ SELECT
     alternative_item.item_id,
     alternative_item.canonical_url,
     alternative_item.title,
-    alternative_item.summary,
+    COALESCE(alternative_item.summary, alternative_item.description),
     alternative_item.location,
     alternative_item.category,
     alternative_item.event_start_at,
@@ -171,6 +172,36 @@ class SqliteMessageDeliveryStore:
             telegram_message_id=str(row[4]),
             primary_item=_delivered_item_from_row(row, 5),
             alternative_item=_optional_delivered_item_from_row(row, 13),
+        )
+
+    def has_primary_delivery(self, *, canonical_url: str, digest_kind: DigestKind) -> bool:
+        """Return true when an item was already sent as a primary message."""
+        with sqlite_connection(self._db_path) as conn:
+            row = conn.execute(
+                """
+                SELECT 1
+                FROM message_deliveries deliveries
+                JOIN items primary_item ON primary_item.item_id = deliveries.primary_item_id
+                WHERE deliveries.digest_kind = ? AND primary_item.canonical_url = ?
+                LIMIT 1
+                """,
+                (digest_kind.value, canonical_url),
+            ).fetchone()
+        return row is not None
+
+    def find_daily_alternative(
+        self,
+        *,
+        local_date: str,
+        excluded_urls: set[str],
+        excluded_title: str | None,
+    ) -> DeliveredItem | None:
+        """Return one same-day item that has not already been delivered as a daily primary."""
+        return find_daily_alternative(
+            self._db_path,
+            local_date=local_date,
+            excluded_urls=excluded_urls,
+            excluded_title=excluded_title,
         )
 
 

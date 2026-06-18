@@ -213,11 +213,15 @@ def _search_params(search_text: str) -> tuple[str, str, str]:
 
 
 def _source_from_row(row: tuple[object, ...]) -> SourceStatus:
+    delivery_count = _int_or_zero(row[5])
     return SourceStatus(
         source_id=str(row[0]),
         source_url=str(row[1]),
         adapter_kind=str(row[2]),
         updated_at=str(row[3]),
+        item_count=_int_or_zero(row[4]),
+        primary_delivery_count=delivery_count,
+        never_delivered=delivery_count == 0,
     )
 
 

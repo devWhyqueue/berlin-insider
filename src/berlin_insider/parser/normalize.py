@@ -19,10 +19,8 @@ DESCRIPTION_MAX_CHARS = 280
 def normalize_fetched_item(item: FetchedItem, *, reference_now: datetime) -> ParsedItem:
     """Convert one fetched item into a normalized parsed item."""
     notes: list[str] = []
-    title = _normalize_text(item.title)
-    detail_text = _normalize_detail_text(item.detail_text)
-    description = _normalize_description(detail_text or item.snippet)
     metadata = item.metadata if isinstance(item.metadata, dict) else {}
+    title, detail_text, clean_text, description = _text_fields(item)
     location = _normalize_text(item.location_hint) or _normalize_text(
         _as_optional_str(metadata.get("location"))
     )
@@ -35,12 +33,21 @@ def normalize_fetched_item(item: FetchedItem, *, reference_now: datetime) -> Par
         title=title,
         description=description,
         detail_text=detail_text,
+        clean_text=clean_text,
         location=location,
         event_start_at=event_start_at,
         notes=notes,
         category=category,
         weekend=weekend,
+        metadata=metadata,
     )
+
+
+def _text_fields(item: FetchedItem) -> tuple[str | None, str | None, str | None, str | None]:
+    title = _normalize_text(item.title)
+    detail_text = _normalize_detail_text(item.detail_text)
+    body = detail_text or item.snippet
+    return title, detail_text, _normalize_clean_text(body), _normalize_description(body)
 
 
 def _append_notes(
@@ -66,13 +73,14 @@ def _to_parsed_item(
     title: str | None,
     description: str | None,
     detail_text: str | None,
+    clean_text: str | None,
     location: str | None,
     event_start_at: datetime | None,
     notes: list[str],
     category: CategoryDecision,
     weekend: WeekendDecision,
+    metadata: dict[str, Any],
 ) -> ParsedItem:
-    metadata = item.metadata if isinstance(item.metadata, dict) else {}
     cached_summary = _as_optional_str(metadata.get("cached_summary"))
     return ParsedItem(
         source_id=item.source_id,
@@ -80,8 +88,9 @@ def _to_parsed_item(
         title=title,
         description=description,
         detail_text=detail_text,
+        clean_text=clean_text,
         event_start_at=event_start_at,
-        event_end_at=parse_end_date(item.metadata.get("end_date")),
+        event_end_at=parse_end_date(metadata.get("end_date")),
         location=location,
         category=category.category,
         category_confidence=category.confidence,
@@ -95,6 +104,11 @@ def _to_parsed_item(
             "detail_status": item.detail_status,
         },
         summary=cached_summary,
+        price_text=_as_optional_str(metadata.get("price_text")),
+        price_amount=_as_optional_float(metadata.get("price_amount")),
+        price_currency=_as_optional_str(metadata.get("price_currency")),
+        is_free=_as_optional_bool(metadata.get("is_free")),
+        event_date_source=_event_date_source(notes),
     )
 
 
@@ -116,8 +130,47 @@ def _normalize_detail_text(value: str | None) -> str | None:
     return _normalize_text(value)
 
 
+def _normalize_clean_text(value: str | None) -> str | None:
+    normalized = _normalize_text(value)
+    if normalized is None:
+        return None
+    cleaned = normalized
+    for marker in ("Cookie", "Datenschutz", "Newsletter abonnieren", "Mehr Infos"):
+        cleaned = cleaned.split(marker, 1)[0].strip()
+    return cleaned or normalized
+
+
 def _as_optional_str(value: Any) -> str | None:
     if value is None:
         return None
     text = str(value).strip()
     return text or None
+
+
+def _as_optional_float(value: Any) -> float | None:
+    if value is None:
+        return None
+    try:
+        return float(str(value).replace(",", "."))
+    except ValueError:
+        return None
+
+
+def _as_optional_bool(value: Any) -> bool | None:
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return None
+    normalized = str(value).strip().casefold()
+    if normalized in {"true", "1", "yes"}:
+        return True
+    if normalized in {"false", "0", "no"}:
+        return False
+    return None
+
+
+def _event_date_source(notes: list[str]) -> str | None:
+    for note in notes:
+        if note.startswith("event_start_at from "):
+            return note.removeprefix("event_start_at from ")
+    return None

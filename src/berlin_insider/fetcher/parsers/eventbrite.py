@@ -71,6 +71,8 @@ def _event_to_item(
         return None
     location = event.get("location")
     location_name = location.get("name") if isinstance(location, dict) else None
+    metadata = {"end_date": _as_string(event.get("endDate"))}
+    metadata.update(_price_metadata(event.get("offers")))
     return FetchedItem(
         source_id=definition.source_id,
         source_url=definition.source_url,
@@ -82,7 +84,7 @@ def _event_to_item(
         location_hint=_as_string(location_name),
         fetch_method=FetchMethod.JSONLD,
         collected_at=aware(context.collected_at),
-        metadata={"end_date": _as_string(event.get("endDate"))},
+        metadata=metadata,
     )
 
 
@@ -138,6 +140,22 @@ def _as_string(value: object) -> str | None:
         return None
     text = str(value).strip()
     return text if text else None
+
+
+def _price_metadata(offers: object) -> dict[str, str]:
+    offer = offers[0] if isinstance(offers, list) and offers else offers
+    if not isinstance(offer, dict):
+        return {}
+    price = _as_string(offer.get("price"))
+    currency = _as_string(offer.get("priceCurrency"))
+    metadata: dict[str, str] = {}
+    if price:
+        metadata["price_amount"] = price
+        metadata["price_text"] = price if currency is None else f"{price} {currency}"
+        metadata["is_free"] = str(price in {"0", "0.0", "0.00"}).lower()
+    if currency:
+        metadata["price_currency"] = currency
+    return metadata
 
 
 def _normalized_type_names(value: object) -> set[str]:
