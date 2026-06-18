@@ -6,8 +6,8 @@ from berlin_insider.curator.orchestrator import Curator
 from berlin_insider.curator.store import NoOpSentItemStore
 from berlin_insider.fetcher.base import SourceDefinition
 from berlin_insider.fetcher.models import (
-    FetchedItem,
     FetchContext,
+    FetchedItem,
     FetchMethod,
     FetchStatus,
     SourceFetchResult,

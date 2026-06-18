@@ -6,9 +6,9 @@ Keep changes small, boring, and aligned with the existing Python package layout.
 
 - Python 3.13 project managed with `uv`.
 - CLI entry point: `uv run berlin-insider`.
-- Main runtime: `berlin_insider.app.runtime.worker`.
+- Main runtime: `berlin_insider.runtime.worker`.
 - SQLite default: `.data/berlin_insider.db`.
-- Public UI lives under `src/berlin_insider/app/web/` and is served from `/ui/`.
+- Public UI lives under `src/berlin_insider/web/` and is served from `/ui/`.
 
 ## Commands
 
