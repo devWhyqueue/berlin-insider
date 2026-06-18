@@ -1,5 +1,5 @@
 
-- After every code change, you need to run clean code skill with option --minimal and pass it with no violations.
+- After every code change, you need to run clean code skill and pass it with no violations.
 
 - You can take a look at the deployment with command:
 
