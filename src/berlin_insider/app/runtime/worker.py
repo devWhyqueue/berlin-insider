@@ -58,10 +58,16 @@ class Worker:
         """Start the always-on worker with scheduler and webhook server."""
         runtime = self._prepare_runtime_state()
         runtime.scheduler.start()
-        self._try_run_cycle(
-            reason="startup catch-up",
-            state_store=runtime.state_store,
-            sent_message_store=runtime.sent_message_store,
+        # ponytail: run startup catch-up asynchronously in scheduler so web server is immediately responsive
+        runtime.scheduler.add_job(
+            self._try_run_cycle,
+            kwargs={
+                "reason": "startup catch-up",
+                "state_store": runtime.state_store,
+                "sent_message_store": runtime.sent_message_store,
+            },
+            id="startup-catch-up",
+            max_instances=1,
         )
         try:
             uvicorn.run(runtime.app, host=self._config.host, port=self._config.port)
