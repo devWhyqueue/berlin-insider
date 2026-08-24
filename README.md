@@ -89,23 +89,10 @@ https://berlin-insider.crabdance.com/ui/
 
 ## Deployment Notes
 
-Production runs on Ubuntu with systemd from `~/berlin-insider`.
+Production runs containerized with Docker / Docker Compose.
 
-Minimal service shape:
-
-```ini
-[Unit]
-Description=Berlin Insider worker
-After=network-online.target
-Wants=network-online.target
-
-[Service]
-Type=simple
-User=ubuntu
-WorkingDirectory=/home/ubuntu/berlin-insider
-ExecStart=/home/ubuntu/.local/bin/uv run berlin-insider worker --timezone Europe/Berlin --db-path .data/berlin_insider.db
-Restart=always
-RestartSec=5
+```bash
+docker compose up -d --build
 ```
 
 Reverse proxy only these paths to `http://127.0.0.1:8080`:
@@ -120,10 +107,9 @@ Do not proxy `/` wholesale if the vhost also serves Pi-hole or another root app.
 ## Operations
 
 ```bash
-systemctl status berlin-insider-worker.service
-journalctl -u berlin-insider-worker.service -n 200 --no-pager
-journalctl -u berlin-insider-worker.service -f
-systemctl cat berlin-insider-worker.service
+docker compose ps
+docker compose logs -f
+docker compose restart
 ```
 
 Check Telegram webhook state:

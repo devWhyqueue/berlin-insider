@@ -32,18 +32,21 @@ After every code change, run the clean-code skill from the repo root and get a p
 - Keep docs concise and command-oriented.
 - Do not commit secrets or `.env`.
 
-## Deployment Access
+## Deployment & Docker
 
-WSL:
+Build & run container:
 
 ```bash
-ssh ubuntu@89.168.90.195
+docker build -t berlin-insider:latest .
+docker compose up -d
 ```
 
-Windows:
+Check logs and health:
 
-```powershell
-ssh ubuntu@89.168.90.195 -i C:\Users\yanni\.ssh\ssh-key-2023-09-20.key
+```bash
+docker compose logs -f
+curl http://localhost:8080/healthz
 ```
 
-Production is expected to run as `berlin-insider-worker.service` from `~/berlin-insider`.
+Production runs containerized via Docker on an OCI instance. Secrets and configs are managed via `.env` (see `.env.example`).
+
