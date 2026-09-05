@@ -5,6 +5,7 @@ from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
+from openai import RateLimitError
 
 from berlin_insider.fetcher.models import SourceId
 from berlin_insider.parser.models import ParsedCategory, ParsedItem, WeekendRelevance
@@ -120,6 +121,38 @@ def test_max_output_tokens_grows_by_attempt() -> None:
     assert _max_output_tokens_for_attempt(base_tokens=200, attempt=0) == 200
     assert _max_output_tokens_for_attempt(base_tokens=200, attempt=1) == 300
     assert _max_output_tokens_for_attempt(base_tokens=200, attempt=2) == 400
+
+
+def test_summary_generator_circuit_breaker_on_quota_exhaustion() -> None:
+    import httpx
+
+    calls = 0
+    dummy_req = httpx.Request("POST", "https://api.openai.com/v1/responses")
+    dummy_resp = httpx.Response(status_code=429, request=dummy_req)
+
+    class _QuotaExhaustedResponses:
+        def create(self, **kwargs):  # noqa: ANN003, ANN202
+            nonlocal calls
+            calls += 1
+            raise RateLimitError(
+                message="You have no credits remaining: credit_balance_exhausted",
+                response=dummy_resp,
+                body={"error": {"code": "credit_balance_exhausted"}},
+            )
+
+    generator = OpenAISummaryGenerator(
+        client=cast(Any, SimpleNamespace(responses=_QuotaExhaustedResponses())),
+        retry_attempts=2,
+    )
+
+    # First call encounters quota exhaustion and trips breaker
+    assert generator.summarize(_sample_item()) is None
+    assert calls == 1
+    assert generator._quota_exhausted is True
+
+    # Subsequent call fails fast without calling OpenAI
+    assert generator.summarize(_sample_item()) is None
+    assert calls == 1
 
 
 @pytest.mark.skipif(

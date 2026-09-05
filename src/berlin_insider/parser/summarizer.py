@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import os
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -8,6 +9,8 @@ from typing import Protocol
 from openai import APIConnectionError, APIError, APITimeoutError, OpenAI, RateLimitError
 
 from berlin_insider.parser.models import ParsedItem
+
+logger = logging.getLogger(__name__)
 
 _DEFAULT_MODEL = "gpt-5-mini"
 _DEFAULT_TIMEOUT_SECONDS = 20.0
@@ -36,6 +39,7 @@ class OpenAISummaryGenerator:
     model: str = _DEFAULT_MODEL
     max_output_tokens: int = _DEFAULT_MAX_OUTPUT_TOKENS
     retry_attempts: int = _DEFAULT_RETRY_ATTEMPTS
+    _quota_exhausted: bool = False
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] | None = None) -> SummaryGenerator:
@@ -51,7 +55,7 @@ class OpenAISummaryGenerator:
         )
         retry_attempts = int(source.get("OPENAI_SUMMARY_RETRY_ATTEMPTS", _DEFAULT_RETRY_ATTEMPTS))
         return cls(
-            client=OpenAI(api_key=api_key, timeout=timeout),
+            client=OpenAI(api_key=api_key, timeout=timeout, max_retries=1),
             model=model,
             max_output_tokens=max_output_tokens,
             retry_attempts=retry_attempts,
@@ -59,11 +63,17 @@ class OpenAISummaryGenerator:
 
     def summarize(self, item: ParsedItem) -> str | None:
         """Generate one brief summary for one parsed item."""
+        if self._quota_exhausted:
+            return None
         content = _summary_input_text(item)
         if content is None:
             return None
         for attempt in range(self.retry_attempts + 1):
+            if self._quota_exhausted:
+                return None
             response = self._create_summary_response(content=content, attempt=attempt)
+            if response is None:
+                return None
             if _should_retry_incomplete_response(
                 response=response,
                 attempt=attempt,
@@ -85,6 +95,12 @@ class OpenAISummaryGenerator:
                 text={"verbosity": "low"},
             )
         except (APITimeoutError, RateLimitError, APIConnectionError, APIError) as exc:
+            # ponytail: trip circuit breaker on quota exhaustion to avoid blocking pipeline on hundreds of doomed calls
+            err_str = str(exc)
+            if "credit_balance_exhausted" in err_str or "insufficient_quota" in err_str:
+                self._quota_exhausted = True
+                logger.warning("OpenAI quota exhausted; disabling summary generation: %s", exc)
+                return None
             raise SummaryGenerationError(str(exc)) from exc
 
 

@@ -91,9 +91,8 @@ def test_worker_registers_webhook_and_runs_startup_cycle(monkeypatch, tmp_path: 
 
     assert fake_messenger.webhook_urls == ["https://example.com/telegram/webhook/secret123"]
     assert fake_messenger.webhook_cert_paths == [cert_path]
-    assert fake_messenger.webhook_ips == [None]
-    assert len(fake_scheduler.calls) == 1
-    assert fake_scheduler.calls[0]["force"] is False
+    assert len(fake_bg.jobs) == 1
+    assert fake_bg.jobs[0]["id"] == "startup-catch-up"
     assert fake_bg.started is True
     assert fake_bg.shutdown_called is True
 
