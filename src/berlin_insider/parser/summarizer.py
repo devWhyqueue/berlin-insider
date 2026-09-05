@@ -12,7 +12,7 @@ from berlin_insider.parser.models import ParsedItem
 
 logger = logging.getLogger(__name__)
 
-_DEFAULT_MODEL = "gpt-5-mini"
+_DEFAULT_MODEL = "gpt-5.6-luna"
 _DEFAULT_TIMEOUT_SECONDS = 20.0
 _DEFAULT_MAX_OUTPUT_TOKENS = 320
 _DEFAULT_RETRY_ATTEMPTS = 2
