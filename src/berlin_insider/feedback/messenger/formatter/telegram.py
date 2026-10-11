@@ -42,8 +42,12 @@ def render_telegram_digest(
 ) -> str:
     """Render curated picks as a Telegram MarkdownV2 digest."""
     if digest_kind == DigestKind.DAILY:
-        return render_daily_telegram_digest(curate, reference_now=reference_now, config=config)
-    return render_weekend_telegram_digest(curate, reference_now=reference_now, config=config)
+        return render_daily_telegram_digest(
+            curate, reference_now=reference_now, config=config
+        )
+    return render_weekend_telegram_digest(
+        curate, reference_now=reference_now, config=config
+    )
 
 
 def render_weekend_telegram_digest(
@@ -78,13 +82,13 @@ def render_daily_telegram_digest(
     """Render one daily curated recommendation in Telegram MarkdownV2 format."""
     cfg = config or DigestFormatConfig()
     lines = [
-        _escape_text("Berlin Insider | Tip of the Day"),
+        escape_text("Berlin Insider | Tip of the Day"),
         "",
     ]
     items = curate.selected_items[:1]
     if not items:
-        lines.append(_escape_text("No strong tip found today."))
-        lines.append(_escape_text("We will share a fresh pick on the next run."))
+        lines.append(escape_text("No strong tip found today."))
+        lines.append(escape_text("We will share a fresh pick on the next run."))
         return "\n".join(lines)
     lines.append(_render_daily_item(items[0], cfg=cfg))
     lines.append("")
@@ -100,7 +104,7 @@ def render_daily_telegram_alternative(
     """Render one persisted alternative item in daily Telegram format."""
     cfg = config or DigestFormatConfig()
     lines = [
-        _escape_text("Berlin Insider | Tip of the Day"),
+        escape_text("Berlin Insider | Tip of the Day"),
         "",
         _render_daily_persisted_item(item, cfg=cfg),
         "",
@@ -110,20 +114,22 @@ def render_daily_telegram_alternative(
 
 def _build_header() -> list[str]:
     return [
-        _escape_text("Berlin Insider | Weekend Picks"),
+        escape_text("Berlin Insider | Weekend Picks"),
         "",
     ]
 
 
 def _render_empty(lines: list[str]) -> str:
-    lines.append(_escape_text("No strong picks found this weekend."))
-    lines.append(_escape_text("We will share fresh picks on the next run."))
+    lines.append(escape_text("No strong picks found this weekend."))
+    lines.append(escape_text("We will share fresh picks on the next run."))
     return "\n".join(lines)
 
 
 def _fallback_lines() -> list[str]:
     return [
-        _escape_text("Note: fewer strong picks this weekend; showing the best available."),
+        escape_text(
+            "Note: fewer strong picks this weekend; showing the best available."
+        ),
         "",
     ]
 
@@ -135,7 +141,7 @@ def _render_sections(items: list[CuratedItem], *, cfg: DigestFormatConfig) -> li
         grouped = by_category.get(category, [])
         if not grouped:
             continue
-        lines.append(f"*{_escape_text(_CATEGORY_LABELS[category])}*")
+        lines.append(f"*{escape_text(_CATEGORY_LABELS[category])}*")
         for item in grouped:
             lines.append(_render_bullet(item, cfg=cfg))
         lines.append("")
@@ -177,7 +183,9 @@ def _render_daily_item(curated_item: CuratedItem, *, cfg: DigestFormatConfig) ->
     )
 
 
-def _render_daily_persisted_item(item: AlternativeDigestItem, *, cfg: DigestFormatConfig) -> str:
+def _render_daily_persisted_item(
+    item: AlternativeDigestItem, *, cfg: DigestFormatConfig
+) -> str:
     return _render_item_fields(
         title=item.title,
         item_url=item.item_url,
@@ -197,16 +205,16 @@ def _render_item_fields(
     cfg: DigestFormatConfig,
     bullet: bool,
 ) -> str:
-    title = _escape_text(title or "Untitled")
-    url = _escape_url(item_url)
+    title = escape_text(title or "Untitled")
+    url = escape_url(item_url)
     lead = "\\- " if bullet else ""
     parts = [f"{lead}[{title}]({url})"]
     if cfg.show_location_when_present and location:
-        parts.append(_escape_text(location))
+        parts.append(escape_text(location))
     base_line = " \\| ".join(parts)
     if summary is None:
         return base_line
-    return f"{base_line}\n{_escape_text(summary)}"
+    return f"{base_line}\n{escape_text(summary)}"
 
 
 def _needs_fallback_note(curate: CurateRunResult) -> bool:
@@ -215,9 +223,11 @@ def _needs_fallback_note(curate: CurateRunResult) -> bool:
     return any("Fallback selection active" in warning for warning in curate.warnings)
 
 
-def _escape_text(value: str) -> str:
+def escape_text(value: str) -> str:
+    """Escape special characters for Telegram MarkdownV2."""
     return _MARKDOWN_V2_SPECIALS.sub(r"\\\1", value)
 
 
-def _escape_url(url: str) -> str:
+def escape_url(url: str) -> str:
+    """Escape URL characters for Telegram MarkdownV2."""
     return url.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")

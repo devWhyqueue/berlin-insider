@@ -2,8 +2,21 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 import berlin_insider.app.runtime.worker as worker_module
 from berlin_insider.scheduler.models import ScheduleConfig, SchedulerState, SchedulerStatus
+
+
+@pytest.fixture(autouse=True)
+def _mock_ra_alerts(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, object]]:
+    calls: list[dict[str, object]] = []
+    monkeypatch.setattr(
+        worker_module,
+        "send_ra_price_alerts",
+        lambda **kwargs: calls.append(kwargs),
+    )
+    return calls
 
 
 class _FakeMessenger:
@@ -25,8 +38,9 @@ class _FakeMessenger:
 
 
 class _FakeScheduler:
-    def __init__(self) -> None:
+    def __init__(self, executed: bool = False) -> None:
         self.calls: list[dict[str, object]] = []
+        self.executed = executed
 
     def run_once(self, **kwargs):  # noqa: ANN003, ANN201
         self.calls.append(kwargs)
@@ -34,11 +48,11 @@ class _FakeScheduler:
             "_Result",
             (),
             {
-                "status": SchedulerStatus.SKIPPED,
-                "due": False,
-                "executed": False,
-                "delivered": False,
-                "reason": "not due",
+                "status": SchedulerStatus.SUCCESS if self.executed else SchedulerStatus.SKIPPED,
+                "due": self.executed,
+                "executed": self.executed,
+                "delivered": self.executed,
+                "reason": "executed" if self.executed else "not due",
                 "state": SchedulerState(),
             },
         )()
@@ -188,3 +202,63 @@ def test_worker_passes_configured_webhook_ip(monkeypatch, tmp_path: Path) -> Non
     worker.run()
 
     assert fake_messenger.webhook_ips == ["203.0.113.10"]
+
+
+def test_worker_cycle_triggers_ra_price_alerts_when_executed(
+    tmp_path: Path, _mock_ra_alerts: list[dict[str, object]]
+) -> None:
+    fake_scheduler = _FakeScheduler(executed=True)
+    worker = worker_module.Worker(
+        config=worker_module.WorkerConfig(
+            db_path=tmp_path / "berlin_insider.db",
+            target_items=7,
+            schedule=ScheduleConfig(timezone="UTC"),
+            host="127.0.0.1",
+            port=8080,
+            webhook_public_base_url="https://example.com",
+            telegram_webhook_secret="secret123",
+        ),
+        scheduler=fake_scheduler,  # type: ignore[arg-type]
+        messenger=_FakeMessenger(),  # type: ignore[arg-type]
+    )
+    state_store = worker_module.SqliteSchedulerStateStore(tmp_path / "berlin_insider.db")
+    sent_store = worker_module.SqliteMessageDeliveryStore(tmp_path / "berlin_insider.db")
+
+    worker._try_run_cycle(
+        reason="test executed", state_store=state_store, sent_message_store=sent_store
+    )
+
+    assert len(_mock_ra_alerts) == 1
+    assert _mock_ra_alerts[0]["db_path"] == tmp_path / "berlin_insider.db"
+
+
+def test_worker_cycle_swallows_ra_price_alerts_error(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    fake_scheduler = _FakeScheduler(executed=True)
+
+    def _fail_alert(**kwargs: object) -> None:
+        raise RuntimeError("RA network error")
+
+    monkeypatch.setattr(worker_module, "send_ra_price_alerts", _fail_alert)
+    worker = worker_module.Worker(
+        config=worker_module.WorkerConfig(
+            db_path=tmp_path / "berlin_insider.db",
+            target_items=7,
+            schedule=ScheduleConfig(timezone="UTC"),
+            host="127.0.0.1",
+            port=8080,
+            webhook_public_base_url="https://example.com",
+            telegram_webhook_secret="secret123",
+        ),
+        scheduler=fake_scheduler,  # type: ignore[arg-type]
+        messenger=_FakeMessenger(),  # type: ignore[arg-type]
+    )
+    state_store = worker_module.SqliteSchedulerStateStore(tmp_path / "berlin_insider.db")
+    sent_store = worker_module.SqliteMessageDeliveryStore(tmp_path / "berlin_insider.db")
+
+    # Should not raise exception
+    worker._try_run_cycle(
+        reason="test error", state_store=state_store, sent_message_store=sent_store
+    )
+

@@ -99,6 +99,11 @@ CREATE TABLE IF NOT EXISTS detail_cache (
   updated_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS ra_price_alerts (
+  event_id TEXT PRIMARY KEY,
+  sent_at TEXT NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_items_source_id ON items (source_id);
 CREATE INDEX IF NOT EXISTS idx_message_deliveries_primary_item_id
 ON message_deliveries (primary_item_id);

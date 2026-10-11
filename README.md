@@ -32,6 +32,7 @@ Default SQLite path: `.data/berlin_insider.db`.
 `worker` is the production runtime. It:
 
 - fetches, parses, curates, and sends Telegram digests;
+- sends Telegram price alerts for Resident Advisor events under 10€;
 - runs daily tips every non-weekend-digest day at 08:00 Europe/Berlin;
 - runs weekend digests on Friday at 08:00 Europe/Berlin;
 - receives Telegram feedback at `POST /telegram/webhook/{secret}`;

@@ -11,10 +11,14 @@ from apscheduler.triggers.cron import CronTrigger
 from fastapi import FastAPI
 
 from berlin_insider.feedback.messenger.telegram import TelegramMessenger
-from berlin_insider.feedback.store import SqliteFeedbackStore, SqliteMessageDeliveryStore
+from berlin_insider.feedback.store import (
+    SqliteFeedbackStore,
+    SqliteMessageDeliveryStore,
+)
 from berlin_insider.feedback.webhook import WebhookDependencies, create_webhook_app
 from berlin_insider.scheduler.models import ScheduleConfig
 from berlin_insider.scheduler.orchestrator import Scheduler
+from berlin_insider.scheduler.ra_price_alert import send_ra_price_alerts
 from berlin_insider.scheduler.store import SqliteSchedulerStateStore
 
 logger = logging.getLogger(__name__)
@@ -113,7 +117,9 @@ class Worker:
             logger.info("Registered Telegram webhook: %s", webhook_url)
             return
         logger.info(
-            "Registered Telegram webhook with certificate: %s (cert=%s)", webhook_url, cert_path
+            "Registered Telegram webhook with certificate: %s (cert=%s)",
+            webhook_url,
+            cert_path,
         )
 
     def _try_run_cycle(
@@ -145,6 +151,13 @@ class Worker:
                 result.delivered,
                 result.reason,
             )
+            if result.executed:
+                try:
+                    send_ra_price_alerts(
+                        db_path=self._config.db_path, messenger=self._messenger
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    logger.exception("Failed to send RA price alerts: %s", exc)
         finally:
             self._run_lock.release()
 
@@ -156,14 +169,18 @@ def _build_scheduler(
     sent_message_store: SqliteMessageDeliveryStore,
 ) -> BackgroundScheduler:
     cfg = worker._config.schedule
-    scheduler = BackgroundScheduler(timezone=cfg.timezone, job_defaults={"coalesce": True})
+    scheduler = BackgroundScheduler(
+        timezone=cfg.timezone, job_defaults={"coalesce": True}
+    )
     weekend_day = _weekday_to_cron_alias(cfg.weekend_weekday)
     if weekend_day is None:
         raise ValueError(f"invalid weekend weekday: {cfg.weekend_weekday}")
     daily_days = _daily_weekdays_excluding(weekend_day)
     scheduler.add_job(
         worker._try_run_cycle,
-        trigger=CronTrigger(day_of_week=daily_days, hour=cfg.daily_hour, minute=cfg.daily_minute),
+        trigger=CronTrigger(
+            day_of_week=daily_days, hour=cfg.daily_hour, minute=cfg.daily_minute
+        ),
         kwargs={
             "reason": "daily trigger",
             "state_store": state_store,
@@ -197,23 +214,10 @@ def _daily_weekdays_excluding(weekend_weekday: str) -> str:
 
 
 def _weekday_to_cron_alias(weekday: str) -> str | None:
-    aliases = {
-        "mon": "mon",
-        "tue": "tue",
-        "wed": "wed",
-        "thu": "thu",
-        "fri": "fri",
-        "sat": "sat",
-        "sun": "sun",
-        "monday": "mon",
-        "tuesday": "tue",
-        "wednesday": "wed",
-        "thursday": "thu",
-        "friday": "fri",
-        "saturday": "sat",
-        "sunday": "sun",
-    }
-    return aliases.get(weekday.lower())
+    prefix = weekday.lower()[:3]
+    return (
+        prefix if prefix in {"mon", "tue", "wed", "thu", "fri", "sat", "sun"} else None
+    )
 
 
 def _build_webhook_url(*, base_url: str, secret: str) -> str:
@@ -225,7 +229,8 @@ def _resolve_webhook_cert_path(configured_path: Path | None) -> Path | None:
         if configured_path.exists():
             return configured_path
         logger.warning(
-            "Webhook cert path does not exist, skipping custom cert: %s", configured_path
+            "Webhook cert path does not exist, skipping custom cert: %s",
+            configured_path,
         )
         return None
     default_path = Path("/etc/nginx/ssl/berlin-insider.crt")
